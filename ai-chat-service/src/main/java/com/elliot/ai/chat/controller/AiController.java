@@ -59,4 +59,20 @@ public class AiController {
     public SummaryResponse summary(ChatRequest request) {
         return assistantFactory.getAssistant("summary").summary(request.message());
     }
+
+    /**
+     * memory 记忆
+     *
+     * @param request
+     * @return
+     */
+    @GetMapping(value = "/mem-chat")
+    public Flux<String> chatStreamWithMemory(ChatRequest request) {
+        return assistantFactory.getAssistant(request.scene()).chatStreamWithMemory(request.conversationIdOrDefault(), request.message());
+    }
+
+    @GetMapping(value = "/tool-chat")
+    public Flux<String> chatStreamWithTool(ChatRequest request) {
+        return assistantFactory.getAssistant("tool_assistant").chatStreamWithTool(request.conversationIdOrDefault(), request.message());
+    }
 }
