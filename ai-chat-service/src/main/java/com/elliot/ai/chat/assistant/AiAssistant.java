@@ -10,4 +10,8 @@ public interface AiAssistant {
     Flux<String> chatStream(String message);
 
     SummaryResponse summary(String message);
+
+    Flux<String> chatStreamWithMemory(String id, String message);
+
+    Flux<String> chatStreamWithTool(String id, String message);
 }

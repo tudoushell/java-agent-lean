@@ -6,11 +6,10 @@ import com.elliot.ai.chat.dto.SummaryResponse;
 import com.elliot.ai.chat.factory.AssistantFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.publisher.Flux;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 
 @RestController
 public class AiController {
@@ -58,5 +57,21 @@ public class AiController {
     @GetMapping(value = "/chat4")
     public SummaryResponse summary(ChatRequest request) {
         return assistantFactory.getAssistant("summary").summary(request.message());
+    }
+
+    /**
+     * memory 记忆
+     *
+     * @param request
+     * @return
+     */
+    @GetMapping(value = "/mem-chat")
+    public Flux<String> chatStreamWithMemory(ChatRequest request) {
+        return assistantFactory.getAssistant(request.scene()).chatStreamWithMemory(request.conversationIdOrDefault(), request.message());
+    }
+
+    @GetMapping(value = "/tool-chat")
+    public Flux<String> chatStreamWithTool(ChatRequest request) {
+        return assistantFactory.getAssistant("tool_assistant").chatStreamWithTool(request.conversationIdOrDefault(), request.message());
     }
 }

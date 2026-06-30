@@ -25,6 +25,8 @@
         <spring-ai-alibaba.version>1.0.0-M6.1</spring-ai-alibaba.version>
         <langchain4j.version>1.0.1</langchain4j.version>
         <langchain4j-community.version>1.0.1-beta6</langchain4j-community.version>
+        <springdoc.version>2.8.6</springdoc.version>
+        <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <maven-compile-plugin.version>3.8.1</maven-compile-plugin.version>
         <maven-deploy-plugin.version>3.1.1</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.3.0</flatten-maven-plugin.version>

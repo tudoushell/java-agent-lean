@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -43,6 +44,12 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
         return ApiResponse.fail("INVALID_REQUEST_BODY", "请求体格式错误");
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleNoResourceFoundException(NoResourceFoundException e) {
+        return ApiResponse.fail("RESOURCE_NOT_FOUND", "资源不存在：" + e.getResourcePath());
     }
 
     @ExceptionHandler(Exception.class)
