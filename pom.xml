@@ -12,6 +12,7 @@
     <description>java-agent-lean</description>
     <modules>
         <module>ai-chat-service</module>
+        <module>ai-rag-knowledge-base</module>
     </modules>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
