@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.elliot.ai.chat.enums.ActionStatus;
+import com.elliot.ai.chat.enums.ActionType;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -16,7 +17,7 @@ public class AiActionApproval {
 
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
-    private String actionType;
+    private ActionType actionType;
     private ActionStatus status;
     private String description;
     private String payload;

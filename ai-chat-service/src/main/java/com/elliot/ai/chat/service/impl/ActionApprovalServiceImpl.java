@@ -5,6 +5,7 @@ import com.elliot.ai.chat.dto.CancelOrderPayload;
 import com.elliot.ai.chat.entity.AiActionApproval;
 import com.elliot.ai.chat.entity.OrderInfo;
 import com.elliot.ai.chat.enums.ActionStatus;
+import com.elliot.ai.chat.enums.ActionType;
 import com.elliot.ai.chat.enums.OrderInfoStatus;
 import com.elliot.ai.chat.exception.BusinessException;
 import com.elliot.ai.chat.mapper.AiActionApprovalMapper;
@@ -29,13 +30,34 @@ public class ActionApprovalServiceImpl extends ServiceImpl<AiActionApprovalMappe
             throw new BusinessException("""
                     Approval with ID '%s' not found""".formatted(approvalId));
         }
-        if (ActionStatus.PENDING.equals(aiActionApproval.getStatus())) {
-            throw new BusinessException("this action is pending");
-        }
-        aiActionApproval.setStatus(ActionStatus.REJECTED);
+        aiActionApproval.setStatus(ActionStatus.EXECUTED);
         aiActionApproval.setDescription("rejected by user");
         this.updateById(aiActionApproval);
     }
+
+    @Override
+    public void confirmApproval(String approvalId) {
+        AiActionApproval aiActionApproval = this.getById(approvalId);
+        if (aiActionApproval == null) {
+            throw new BusinessException("""
+                    Approval with ID '%s' not found""".formatted(approvalId));
+        }
+        if (ActionStatus.EXECUTED.equals(aiActionApproval.getStatus())) {
+            throw new BusinessException("this action is already executed");
+        }
+        if (!ActionStatus.PENDING.equals(aiActionApproval.getStatus())) {
+            throw new BusinessException("this action is not pending");
+        }
+        if (ActionType.CANCEL_ORDER.equals(aiActionApproval.getActionType())) {
+            confirmCancelOrder(aiActionApproval.getPayload());
+            aiActionApproval.setStatus(ActionStatus.EXECUTED);
+            this.updateById(aiActionApproval);
+            return;
+        }
+        throw new BusinessException("cannot support this action type");
+
+    }
+
 
     private void confirmCancelOrder(String payload) {
         CancelOrderPayload cancelOrderPayload = this.parsePayload(payload);
@@ -53,23 +75,6 @@ public class ActionApprovalServiceImpl extends ServiceImpl<AiActionApprovalMappe
         if (updated != 1) {
             throw new BusinessException("update order status failed");
         }
-    }
-
-    @Override
-    public void confirmApproval(String approvalId) {
-        AiActionApproval aiActionApproval = this.getById(approvalId);
-        if (aiActionApproval == null) {
-            throw new BusinessException("""
-                    Approval with ID '%s' not found""".formatted(approvalId));
-        }
-        if (ActionStatus.PENDING.equals(aiActionApproval.getStatus())) {
-            throw new BusinessException("this action is pending");
-        }
-        if ("CANCEL_ORDER".equals(aiActionApproval.getActionType())) {
-            confirmCancelOrder(aiActionApproval.getPayload());
-        }
-        throw new BusinessException("cannot support this action type");
-
     }
 
 

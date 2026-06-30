@@ -6,11 +6,10 @@ import com.elliot.ai.chat.dto.SummaryResponse;
 import com.elliot.ai.chat.factory.AssistantFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.publisher.Flux;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 
 @RestController
 public class AiController {
