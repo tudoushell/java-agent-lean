@@ -1,7 +1,6 @@
 package com.elliot.ai.rag.config;
 
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -22,7 +21,4 @@ public class ChatConfig {
                         .build()).build();
         return ChatClient.create(openAiChatModel);
     }
-
-
-
 }
