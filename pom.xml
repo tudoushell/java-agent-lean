@@ -11,6 +11,7 @@
 
     <description>java-agent-lean</description>
     <modules>
+        <module>ai-common</module>
         <module>ai-chat-service</module>
         <module>ai-rag-knowledge-base</module>
     </modules>
