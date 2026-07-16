@@ -5,13 +5,16 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.dto.KbDocumentDto;
+import com.elliot.ai.rag.dto.ParsedText;
 import com.elliot.ai.rag.dto.StoredFile;
 import com.elliot.ai.rag.entity.KbDocument;
 import com.elliot.ai.rag.entity.KnowledgeBase;
 import com.elliot.ai.rag.enums.KbDocumentStatus;
 import com.elliot.ai.rag.enums.KnowledgeBaseStatus;
+import com.elliot.ai.rag.factory.DocumentParseFactory;
 import com.elliot.ai.rag.mapper.KbDocumentMapper;
 import com.elliot.ai.rag.mapper.KnowledgeBaseMapper;
+import com.elliot.ai.rag.parse.AbstractDocumentParse;
 import com.elliot.ai.rag.service.KbDocumentService;
 import com.elliot.ai.rag.service.LocalFilesStorageService;
 import lombok.RequiredArgsConstructor;
@@ -19,8 +22,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.time.OffsetDateTime;
 import java.util.UUID;
+
+import static org.apache.commons.lang3.StringUtils.abbreviate;
 
 @RequiredArgsConstructor
 @Service
@@ -29,6 +33,7 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final LocalFilesStorageService localFilesStorageService;
+    private final DocumentParseFactory documentParseFactory;
 
 
     @Override
@@ -44,14 +49,13 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
         }
 
         StoredFile storedFile = localFilesStorageService.store(file);
-        if (existsSameFile(knowledgeBaseId,storedFile.sha256())) {
+        if (existsSameFile(knowledgeBaseId, storedFile.sha256())) {
             throw new BusinessException(
                     ResultCode.FAIL,
                     "该知识库中已经存在相同内容的文档"
             );
         }
 
-        OffsetDateTime now = OffsetDateTime.now();
         KbDocument kbDocument = new KbDocument();
         kbDocument.setId(UUID.randomUUID());
         kbDocument.setKnowledgeBaseId(knowledgeBaseId);
@@ -63,13 +67,26 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
         kbDocument.setSizeBytes(storedFile.sizeBytes());
         kbDocument.setSha256(storedFile.sha256());
         kbDocument.setStatus(KbDocumentStatus.UPLOADED);
-        kbDocument.setCreatedAt(now);
-        kbDocument.setUpdatedAt(now);
 
         if (!this.save(kbDocument)) {
             throw new BusinessException(ResultCode.FAIL, "文档记录创建失败");
         }
-
+        try {
+            AbstractDocumentParse parse = documentParseFactory.getParse(kbDocument.getFileExtension());
+            if (parse == null) {
+                throw new BusinessException(ResultCode.FAIL, "暂不能解析该文件");
+            }
+            ParsedText parsedText = parse.parse(kbDocument.getId(), kbDocument.getStoragePath());
+            kbDocument.setParsedStoragePath(parsedText.relativePath());
+            kbDocument.setParsedPreview(parsedText.preview());
+            kbDocument.setParsedCharCount(parsedText.charCount());
+            kbDocument.setStatus(KbDocumentStatus.PARSED);
+            kbDocument.setErrorMessage(null);
+        } catch (Exception e) {
+            kbDocument.setStatus(KbDocumentStatus.FAILED);
+            kbDocument.setErrorMessage(abbreviate(e.getMessage(), 2000));
+        }
+        this.updateById(kbDocument);
         return toDto(kbDocument);
     }
 
