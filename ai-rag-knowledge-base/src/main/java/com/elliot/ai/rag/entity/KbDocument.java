@@ -46,6 +46,17 @@ public class KbDocument {
     /** 文件内容的 SHA-256 摘要。 */
     private String sha256;
 
+    /**
+     * 分片数量
+     */
+    private Integer chunkCount;
+
+    private String chunkStrategy;
+
+    private Integer chunkSize;
+
+    private Integer chunkOverlap;
+
     /** 文档当前处理状态。 */
     private KbDocumentStatus status;
 

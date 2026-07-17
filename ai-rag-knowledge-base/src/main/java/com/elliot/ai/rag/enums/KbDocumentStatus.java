@@ -11,7 +11,8 @@ public enum KbDocumentStatus {
 
     UPLOADED("UPLOADED"),
     PARSED("PARSED"),
-    FAILED("FAILED");
+    FAILED("FAILED"),
+    CHUNKED("CHUNKED");
 
     @EnumValue
     private final String value;

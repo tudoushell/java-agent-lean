@@ -3,22 +3,22 @@ package com.elliot.ai.rag.parse;
 import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.config.StorageProperties;
+import com.elliot.ai.rag.dto.ParsedResult;
 import com.elliot.ai.rag.dto.ParsedText;
-import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.util.UUID;
 
+@Slf4j
 public abstract class AbstractDocumentParse {
     private final Path uploadRoot;
     private final Path parseRoot;
-    private static final int PREVIEW_LENGTH = 500;
+    protected static final int PREVIEW_LENGTH = 500;
 
 
     public AbstractDocumentParse(StorageProperties properties) {
@@ -30,38 +30,39 @@ public abstract class AbstractDocumentParse {
 
     public abstract boolean isSupport(String extension);
 
-    protected abstract String parseFile(Path sourcePath) throws IOException;
+    /**
+     * 读取文件内容，将文件写入解析后的目录
+     *
+     * @param sourcePath
+     * @param targetPath
+     * @return
+     * @throws IOException
+     */
+    protected abstract ParsedResult  parseFile(Path sourcePath, Path targetPath) throws IOException;
 
     /**
      * 解析已上传的文件，将文本内容保存到解析目录，并返回解析文件路径、预览内容和文本长度。
      *
-     * @param documentId 文档唯一标识，用于生成解析结果文件名
+     * @param documentId  文档唯一标识，用于生成解析结果文件名
      * @param storagePath 上传目录下的文件相对路径
      * @return 解析后的文本信息
      */
     public ParsedText parse(UUID documentId, String storagePath) {
         Path sourcePath = resolveSafely(uploadRoot, storagePath);
+        String parsedRelativePath = buildParsedPath(documentId);
+        Path targetPath = resolveSafely(parseRoot, parsedRelativePath);
         try {
-            String content = parseFile(sourcePath);
-            if (!StringUtils.hasText(content)) {
+            Files.createDirectories(targetPath.getParent());
+            ParsedResult parsedResult = parseFile(sourcePath, targetPath);
+            if (!parsedResult.isHasText()) {
                 throw new BusinessException(ResultCode.FAIL, "文件内容为空");
             }
-            String parsedRelativePath = buildParsedPath(documentId);
-            Path targetPath = resolveSafely(parseRoot, parsedRelativePath);
-            Files.createDirectories(targetPath.getParent());
-            Files.writeString(
-                    targetPath,
-                    content,
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING
-            );
-            return new ParsedText(
-                    parsedRelativePath,
-                    createPreview(content),
-                    content.length()
-            );
+            return new ParsedText(parsedRelativePath, parsedResult.getLimitContent(), parsedResult.getCharCount());
+        } catch (BusinessException e) {
+            deleteTargetFile(targetPath);
+            throw e;
         } catch (IOException e) {
+            deleteTargetFile(targetPath);
             throw new BusinessException(
                     ResultCode.FAIL,
                     "文档解析失败：" + e.getMessage()
@@ -69,14 +70,13 @@ public abstract class AbstractDocumentParse {
         }
     }
 
-    private String createPreview(String content) {
-        if (content.length() <= PREVIEW_LENGTH) {
-            return content;
+    private void deleteTargetFile(Path targetPath) {
+        try {
+            Files.deleteIfExists(targetPath);
+        } catch (IOException e) {
+            log.error("删除解析失败文件失败：{}", targetPath, e);
         }
-
-        return content.substring(0, PREVIEW_LENGTH);
     }
-
 
     private String buildParsedPath(UUID documentId) {
         LocalDate today = LocalDate.now();
@@ -89,16 +89,8 @@ public abstract class AbstractDocumentParse {
         ).toString();
     }
 
-    protected String normalize(String content) {
-        // 删除 UTF-8 BOM
-        if (content.startsWith("\uFEFF")) {
-            content = content.substring(1);
-        }
-
-        // 统一换行符
-        return content
-                .replace("\r\n", "\n")
-                .replace("\r", "\n");
+    protected boolean isUTF8BOM(char content) {
+        return content == '\uFEFF';
     }
 
     private Path resolveSafely(Path root, String storagePath) {
