@@ -12,9 +12,11 @@ import com.elliot.ai.rag.enums.KbDocumentStatus;
 import com.elliot.ai.rag.mapper.DocumentChunkMapper;
 import com.elliot.ai.rag.mapper.KbDocumentMapper;
 import com.elliot.ai.rag.service.DocumentChunkService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.BufferedReader;
@@ -27,13 +29,13 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 
 /**
  * 文档文本片段业务服务实现。
  */
+@Slf4j
 @Service
 public class DocumentChunkServiceImpl
         extends ServiceImpl<DocumentChunkMapper, DocumentChunk>
@@ -59,6 +61,7 @@ public class DocumentChunkServiceImpl
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int chunk(UUID documentId) {
         KbDocument kbDocument = kbDocumentMapper.selectById(documentId);
         if (kbDocument == null) {
@@ -79,7 +82,8 @@ public class DocumentChunkServiceImpl
         kbDocument.setChunkCount(chunkCount);
         kbDocument.setChunkStrategy("TOKEN");
         kbDocument.setChunkSize(chunkProperties.getChunkSize());
-        kbDocument.setChunkOverlap(chunkProperties.getOverlap());
+        // TokenTextSplitter 不支持重叠切分，固定记录 0，避免配置值产生误导。
+        kbDocument.setChunkOverlap(0);
         kbDocument.setErrorMessage(null);
         kbDocumentMapper.updateById(kbDocument);
         return chunkCount;
@@ -90,6 +94,9 @@ public class DocumentChunkServiceImpl
         int nextChunkIndex = 0;
         int blockLimit = chunkProperties.getReadBufferChars();
         Path parsedFile = parsedRootPath.resolve(kbDocument.getParsedStoragePath()).normalize();
+        if (!parsedFile.startsWith(parsedRootPath)) {
+            throw new BusinessException(ResultCode.FAIL, "解析文本路径非法");
+        }
         try (BufferedReader reader = Files.newBufferedReader(parsedFile)) {
             char[] readBuffer = new char[FILE_READ_BUFFER_SIZE];
             StringBuilder pending = new StringBuilder(blockLimit + FILE_READ_BUFFER_SIZE);
@@ -104,11 +111,12 @@ public class DocumentChunkServiceImpl
                 }
             }
             if (!pending.isEmpty()) {
-                splitBlockAndCollect(kbDocument, pending.toString(), nextChunkIndex, batch);
+               nextChunkIndex = splitBlockAndCollect(kbDocument, pending.toString(), nextChunkIndex, batch);
             }
             flushBatch(batch);
             return nextChunkIndex;
         } catch (IOException e) {
+            log.error("读取解析文本失败, documentId={}, path={}", kbDocument.getId(), parsedFile, e);
             throw new BusinessException(
                     ResultCode.FAIL,
                     "读取解析文本失败"
@@ -120,18 +128,8 @@ public class DocumentChunkServiceImpl
         if (!StringUtils.hasText(block)) {
             return nextChunkIndex;
         }
-        Document document = new Document(block, Map.of(
-                "knowledgeBaseId",
-                kbDocument
-                        .getKnowledgeBaseId()
-                        .toString(),
-                "documentId",
-                kbDocument
-                        .getId()
-                        .toString(),
-                "documentName",
-                kbDocument
-                        .getOriginalName()));
+        // 元数据在切分环节暂未使用，Chunk 字段直接取自 kbDocument，向量化入库时再补充。
+        Document document = new Document(block);
         List<Document> splitDocuments = tokenTextSplitter.apply(List.of(document));
         for (Document splitDocument : splitDocuments) {
             String content = splitDocument.getText();
@@ -176,7 +174,7 @@ public class DocumentChunkServiceImpl
             byte[] bytes = digest.digest(normalizedContent.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(bytes);
         } catch (Exception e) {
-            throw new BusinessException(ResultCode.FAIL, "计算Chunk hash Failed" + e.getMessage());
+            throw new BusinessException(ResultCode.FAIL, "计算 Chunk 内容哈希失败：" + e.getMessage());
         }
     }
 

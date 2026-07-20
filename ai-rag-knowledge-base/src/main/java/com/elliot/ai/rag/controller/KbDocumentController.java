@@ -1,7 +1,11 @@
 package com.elliot.ai.rag.controller;
 
 import com.elliot.ai.common.dto.Result;
+import com.elliot.ai.common.enums.ResultCode;
+import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.dto.KbDocumentDto;
+import com.elliot.ai.rag.entity.KbDocument;
+import com.elliot.ai.rag.service.DocumentChunkService;
 import com.elliot.ai.rag.service.KbDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -28,6 +32,7 @@ import java.util.UUID;
 public class KbDocumentController {
 
     private final KbDocumentService kbDocumentService;
+    private final DocumentChunkService documentChunkService;
 
     /**
      * 向指定知识库上传文档。
@@ -49,5 +54,37 @@ public class KbDocumentController {
             @Parameter(description = "文件") @RequestPart("file") MultipartFile file
     ) {
         return Result.buildSuccess(kbDocumentService.upload(knowledgeBaseId, file));
+    }
+
+    /**
+     * 将已解析的文档按 Token 切分为多个文本片段。
+     *
+     * @param knowledgeBaseId 所属知识库 ID
+     * @param documentId      待切分的文档 ID
+     * @return 实际生成并保存的 Chunk 数量
+     */
+    @PostMapping("/{documentId}/chunks")
+    @Operation(summary = "切分知识库文档", description = "读取已解析文本，按 Token 切分并保存文档片段。")
+    public Result<Integer> chunk(
+            @Parameter(
+                    name = "knowledgeBaseId",
+                    description = "所属知识库 ID",
+                    in = ParameterIn.PATH,
+                    required = true
+            )
+            @PathVariable("knowledgeBaseId") UUID knowledgeBaseId,
+            @Parameter(
+                    name = "documentId",
+                    description = "待切分的文档 ID",
+                    in = ParameterIn.PATH,
+                    required = true
+            )
+            @PathVariable("documentId") UUID documentId
+    ) {
+        KbDocument document = kbDocumentService.getById(documentId);
+        if (document == null || !knowledgeBaseId.equals(document.getKnowledgeBaseId())) {
+            throw new BusinessException(ResultCode.FAIL, "文档不存在或不属于该知识库");
+        }
+        return Result.buildSuccess(documentChunkService.chunk(documentId));
     }
 }

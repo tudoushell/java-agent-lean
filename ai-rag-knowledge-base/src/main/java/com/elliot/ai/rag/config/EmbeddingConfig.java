@@ -22,6 +22,6 @@ public class EmbeddingConfig {
                 .model("nomic-embed-text")
                 .build();
 
-        return new OpenAiEmbeddingModel(openAiApi, MetadataMode.EMBED, options);
+        return new OpenAiEmbeddingModel(openAiApi, MetadataMode.NONE, options);
     }
 }
