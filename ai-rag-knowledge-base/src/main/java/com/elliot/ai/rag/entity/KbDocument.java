@@ -51,11 +51,23 @@ public class KbDocument {
      */
     private Integer chunkCount;
 
+    /** 文本切分策略，例如 TOKEN、按段落或按标题切分。 */
     private String chunkStrategy;
 
+    /** 切分时每个 Chunk 的目标大小，具体单位由切分策略决定。 */
     private Integer chunkSize;
 
+    /** 相邻 Chunk 的重叠大小，用于保留跨片段上下文。 */
     private Integer chunkOverlap;
+
+    /** 已成功写入向量库的向量数量。 */
+    private Integer vectorCount;
+
+    /** 生成向量时使用的 embedding 模型名称。 */
+    private String embeddingModel;
+
+    /** 最近一次成功完成向量索引的时间。 */
+    private OffsetDateTime indexedAt;
 
     /** 文档当前处理状态。 */
     private KbDocumentStatus status;

@@ -3,6 +3,7 @@ package com.elliot.ai.rag.controller;
 import com.elliot.ai.common.dto.Result;
 import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
+import com.elliot.ai.rag.dto.IndexResultDto;
 import com.elliot.ai.rag.dto.KbDocumentDto;
 import com.elliot.ai.rag.entity.KbDocument;
 import com.elliot.ai.rag.service.DocumentChunkService;
@@ -86,5 +87,37 @@ public class KbDocumentController {
             throw new BusinessException(ResultCode.FAIL, "文档不存在或不属于该知识库");
         }
         return Result.buildSuccess(documentChunkService.chunk(documentId));
+    }
+
+    /**
+     * 为已切分的文档生成向量并写入向量库。
+     *
+     * @param knowledgeBaseId 所属知识库 ID
+     * @param documentId      待索引的文档 ID
+     * @return 向量写入结果
+     */
+    @PostMapping("/{documentId}/index")
+    @Operation(summary = "索引知识库文档", description = "为已切分的文本生成向量，并写入向量数据库。")
+    public Result<IndexResultDto> index(
+            @Parameter(
+                    name = "knowledgeBaseId",
+                    description = "所属知识库 ID",
+                    in = ParameterIn.PATH,
+                    required = true
+            )
+            @PathVariable("knowledgeBaseId") UUID knowledgeBaseId,
+            @Parameter(
+                    name = "documentId",
+                    description = "待索引的文档 ID",
+                    in = ParameterIn.PATH,
+                    required = true
+            )
+            @PathVariable("documentId") UUID documentId
+    ) {
+        KbDocument document = kbDocumentService.getById(documentId);
+        if (document == null || !knowledgeBaseId.equals(document.getKnowledgeBaseId())) {
+            throw new BusinessException(ResultCode.FAIL, "文档不存在或不属于该知识库");
+        }
+        return Result.buildSuccess(kbDocumentService.index(documentId));
     }
 }
