@@ -68,7 +68,7 @@ public class KnowledgeBaseController {
      */
     @GetMapping("/{id}")
     @Operation(summary = "查询知识库详情", description = "根据知识库 ID 查询知识库详情。")
-    public Result<KnowledgeBaseDto> getById(@PathVariable UUID id) {
+    public Result<KnowledgeBaseDto> getById(@PathVariable("id") UUID id) {
         return Result.buildSuccess(
                 KnowledgeBaseDto.from(knowledgeBaseService.getKnowledgeBase(id))
         );
