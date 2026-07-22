@@ -30,25 +30,20 @@ public class RetrievalServiceImpl implements RetrievalService {
 
     private final KnowledgeBaseService knowledgeBaseService;
 
-    /**
-     * 在指定知识库内执行向量相似度检索。
-     *
-     * <p>先校验知识库处于启用状态，再基于 {@code knowledgeBaseId} 构造 metadata
-     * 过滤条件，确保只从目标知识库的向量中召回结果。最后将命中的 Spring AI
-     * {@link Document} 转换为包含排序、分数和来源信息的检索结果。</p>
-     *
-     * @param searchDto 查询文本、知识库 ID、返回数量和相似度阈值
-     * @return 包含命中片段及其相似度分数的检索结果
-     */
+
     @Override
     public RetrievalSearchResultDto search(RetrievalSearchDto searchDto) {
+        // 仅允许从处于启用状态的知识库中检索。
         validateKnowledgeBase(searchDto.getKnowledgeBaseId());
         Integer topK = searchDto.getTopK();
         Double threshold = searchDto.getSimilarityThreshold();
 
+        // 向量写入时将 knowledgeBaseId 保存为字符串 metadata，因此过滤值也使用字符串。
         FilterExpressionBuilder filterBuilder = new FilterExpressionBuilder();
         Filter.Expression knowledgeBaseFilter = filterBuilder.eq("knowledgeBaseId", searchDto.getKnowledgeBaseId().toString())
                 .build();
+
+        // 查询文本生成向量后，仅在目标知识库的向量范围内按相似度召回 TopK 个结果。
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(searchDto.getQuery().trim())
                 .topK(topK)
@@ -56,6 +51,7 @@ public class RetrievalServiceImpl implements RetrievalService {
                 .filterExpression(knowledgeBaseFilter)
                 .build();
 
+        // 将向量库返回的 Document 及 metadata 转换为接口需要的命中结果。
         List<Document> documents = vectorStoreRetriever.similaritySearch(searchRequest);
         List<RetrievalHitDto> results = convertResults(documents);
         return new RetrievalSearchResultDto(searchDto.getKnowledgeBaseId(),

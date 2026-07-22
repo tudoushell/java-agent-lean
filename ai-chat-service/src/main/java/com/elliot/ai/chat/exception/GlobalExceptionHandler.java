@@ -1,5 +1,6 @@
 package com.elliot.ai.chat.exception;
 
+import com.elliot.ai.common.prompt.PromptTemplateException;
 import com.elliot.ai.chat.dto.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -18,6 +19,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleBusinessException(BusinessException e) {
+        return ApiResponse.fail(e.getCode(), e.getMessage());
+    }
+
+    @ExceptionHandler(PromptTemplateException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handlePromptTemplateException(PromptTemplateException e) {
         return ApiResponse.fail(e.getCode(), e.getMessage());
     }
 

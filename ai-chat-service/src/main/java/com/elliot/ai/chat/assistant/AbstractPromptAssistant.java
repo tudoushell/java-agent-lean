@@ -1,7 +1,7 @@
 package com.elliot.ai.chat.assistant;
 
-import com.elliot.ai.chat.config.PromptTemplateConfig;
-import com.elliot.ai.chat.dto.PromptTemplate;
+import com.elliot.ai.common.prompt.PromptTemplate;
+import com.elliot.ai.common.prompt.PromptTemplateConfig;
 import com.elliot.ai.chat.dto.SummaryResponse;
 import lombok.Getter;
 import org.springframework.ai.chat.client.ChatClient;

@@ -17,7 +17,7 @@ public class ChatConfig {
                         .apiKey("ollama")
                         .build())
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.5:0.8b")
+                        .model("qwen3-vl:2b")
                         .build()).build();
         return ChatClient.create(openAiChatModel);
     }

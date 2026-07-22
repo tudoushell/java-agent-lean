@@ -1,10 +1,11 @@
 package com.elliot.ai.chat;
 
+import com.elliot.ai.common.autoconfigure.CommonWebAutoConfiguration;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication
+@SpringBootApplication(exclude = CommonWebAutoConfiguration.class)
 @MapperScan("com.elliot.ai.chat.mapper")
 public class AiChatServiceApplication {
 

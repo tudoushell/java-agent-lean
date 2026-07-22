@@ -1,1 +1,2 @@
 com.elliot.ai.common.autoconfigure.CommonWebAutoConfiguration
+com.elliot.ai.common.autoconfigure.PromptTemplateAutoConfiguration

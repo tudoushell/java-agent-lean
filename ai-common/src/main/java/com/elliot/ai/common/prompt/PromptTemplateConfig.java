@@ -1,25 +1,23 @@
-package com.elliot.ai.chat.config;
+package com.elliot.ai.common.prompt;
 
-import com.elliot.ai.chat.dto.PromptTemplate;
-import com.elliot.ai.chat.exception.BusinessException;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-@Component
+/**
+ * 从当前应用 Classpath 的 {@code prompts/{scene}/} 目录加载并缓存提示词模板。
+ */
 public class PromptTemplateConfig {
 
-    private final Map<String, PromptTemplate> cache = new HashMap<>();
+    private final Map<String, PromptTemplate> cache = new ConcurrentHashMap<>();
 
     public PromptTemplate getTemplate(String sceneCode) {
-        String realScene = resolveScene(sceneCode);
-        return cache.computeIfAbsent(realScene, this::loadPromptTemplate);
+        String scene = resolveScene(sceneCode);
+        return cache.computeIfAbsent(scene, this::loadPromptTemplate);
     }
-
 
     private String resolveScene(String sceneCode) {
         if (sceneCode == null || sceneCode.isBlank()) {
@@ -36,11 +34,10 @@ public class PromptTemplateConfig {
 
     private String readPromptTemplate(String scene, String fileName) {
         String path = "prompts/" + scene + "/" + fileName;
-
         ClassPathResource resource = new ClassPathResource(path);
 
         if (!resource.exists()) {
-            throw new BusinessException(
+            throw new PromptTemplateException(
                     "PROMPT_NOT_FOUND",
                     "Prompt 文件不存在：" + path
             );
@@ -48,8 +45,9 @@ public class PromptTemplateConfig {
 
         try {
             return resource.getContentAsString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new BusinessException(
+        }
+        catch (IOException exception) {
+            throw new PromptTemplateException(
                     "PROMPT_READ_ERROR",
                     "读取 Prompt 文件失败：" + path
             );
