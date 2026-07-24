@@ -1,6 +1,7 @@
 const state = {
     libraries: [],
     activeLibrary: null,
+    models: [],
     documents: JSON.parse(localStorage.getItem('atlas-documents') || '{}')
 };
 
@@ -20,6 +21,8 @@ const elements = {
     indexButton: document.querySelector('#index-document'),
     retrievalOutput: document.querySelector('#retrieval-output'),
     chatOutput: document.querySelector('#chat-output'),
+    chatModel: document.querySelector('#chat-model'),
+    chatSubmit: document.querySelector('#chat-submit'),
     toast: document.querySelector('#toast')
 };
 
@@ -32,6 +35,70 @@ async function api(path, options = {}) {
         throw new Error(body?.message || `请求失败（HTTP ${response.status}）`);
     }
     return body.data;
+}
+
+function parseSseMessage(message) {
+    let eventName = 'message';
+    const dataLines = [];
+
+    for (const line of message.split(/\r?\n/)) {
+        if (!line || line.startsWith(':')) continue;
+        const separator = line.indexOf(':');
+        const field = separator === -1 ? line : line.slice(0, separator);
+        let value = separator === -1 ? '' : line.slice(separator + 1);
+        if (value.startsWith(' ')) value = value.slice(1);
+
+        if (field === 'event') eventName = value;
+        if (field === 'data') dataLines.push(value);
+    }
+
+    if (!dataLines.length) return null;
+    const rawData = dataLines.join('\n');
+    try {
+        return { event: eventName, data: JSON.parse(rawData) };
+    } catch {
+        return { event: eventName, data: rawData };
+    }
+}
+
+async function streamSse(path, options, onEvent) {
+    const response = await fetch(path, options);
+    const contentType = response.headers.get('content-type') || '';
+
+    if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
+        const text = await response.text();
+        let body = null;
+        try {
+            body = JSON.parse(text);
+        } catch {
+            // 非 JSON 错误响应直接使用原始文本。
+        }
+        throw new Error(body?.message || text || `请求失败（HTTP ${response.status}）`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+
+        let separator;
+        while ((separator = buffer.match(/\r?\n\r?\n/))) {
+            const message = buffer.slice(0, separator.index);
+            buffer = buffer.slice(separator.index + separator[0].length);
+            const parsed = parseSseMessage(message);
+            if (parsed) onEvent(parsed);
+        }
+
+        if (done) break;
+    }
+
+    if (buffer.trim()) {
+        const parsed = parseSseMessage(buffer);
+        if (parsed) onEvent(parsed);
+    }
 }
 
 function notify(message, type = 'success') {
@@ -64,6 +131,35 @@ function requireLibrary() {
 function formatDate(value) {
     if (!value) return '时间未知';
     return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' }).format(new Date(value));
+}
+
+async function loadModels() {
+    elements.chatModel.disabled = true;
+    elements.chatSubmit.disabled = true;
+    elements.chatModel.replaceChildren(new Option('正在加载模型…', ''));
+
+    try {
+        const models = await api('/api/models');
+        if (!Array.isArray(models) || !models.length) {
+            throw new Error('当前没有可用的聊天模型');
+        }
+
+        state.models = models;
+        elements.chatModel.replaceChildren();
+        models.forEach(modelCode => {
+            elements.chatModel.append(new Option(modelCode, modelCode));
+        });
+
+        const savedModel = localStorage.getItem('atlas-chat-model');
+        elements.chatModel.value = models.includes(savedModel) ? savedModel : models[0];
+        localStorage.setItem('atlas-chat-model', elements.chatModel.value);
+        elements.chatModel.disabled = false;
+        elements.chatSubmit.disabled = false;
+    } catch (error) {
+        state.models = [];
+        elements.chatModel.replaceChildren(new Option('模型加载失败', ''));
+        notify(error.message, 'error');
+    }
 }
 
 async function loadLibraries(preferredId) {
@@ -204,6 +300,53 @@ function switchView(name) {
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === `view-${name}`));
 }
 
+function sourceChunkDetails(chunks) {
+    const details = document.createElement('details');
+    details.className = 'source-details';
+    details.open = true;
+
+    const summary = document.createElement('summary');
+    summary.textContent = `上下文详情 · ${chunks.length} 个 Chunk`;
+    details.append(summary);
+
+    const chunkList = document.createElement('div');
+    chunkList.className = 'source-chunks';
+    chunks.forEach(chunk => {
+        const item = document.createElement('section');
+        item.className = `source-chunk${chunk.matched ? ' matched' : ''}`;
+
+        const head = document.createElement('div');
+        head.className = 'source-chunk-head';
+        const index = document.createElement('strong');
+        index.textContent = chunk.chunkIndex == null ? 'Chunk' : `Chunk ${chunk.chunkIndex}`;
+        const badge = document.createElement('span');
+        badge.className = `chunk-badge${chunk.matched ? ' matched' : ''}`;
+        badge.textContent = chunk.matched ? '向量命中' : '相邻上下文';
+        head.append(index, badge);
+
+        const metadata = [];
+        if (chunk.selectTitle) metadata.push(chunk.selectTitle);
+        if (chunk.pageNumber != null) metadata.push(`第 ${chunk.pageNumber} 页`);
+        if (metadata.length) {
+            const meta = document.createElement('div');
+            meta.className = 'source-chunk-meta';
+            meta.textContent = metadata.join(' · ');
+            item.append(head, meta);
+        } else {
+            item.append(head);
+        }
+
+        const content = document.createElement('p');
+        content.className = 'source-chunk-content';
+        content.textContent = chunk.content || '该 Chunk 没有可展示的文本。';
+        item.append(content);
+        chunkList.append(item);
+    });
+
+    details.append(chunkList);
+    return details;
+}
+
 function hitCard(hit, label) {
     const card = document.createElement('article');
     card.className = 'hit';
@@ -222,11 +365,23 @@ function hitCard(hit, label) {
     if (hit.sectionTitle) details.push(hit.sectionTitle);
     if (hit.pageNumber != null) details.push(`第 ${hit.pageNumber} 页`);
     if (hit.chunkIndex != null) details.push(`Chunk ${hit.chunkIndex}`);
+    if (hit.contextStartIndex != null && hit.contextEndIndex != null) {
+        details.push(hit.contextStartIndex === hit.contextEndIndex
+            ? `上下文 Chunk ${hit.contextStartIndex}`
+            : `上下文 Chunk ${hit.contextStartIndex}–${hit.contextEndIndex}`);
+    }
+    if (hit.matchedChunkIndex != null) details.push(`命中 Chunk ${hit.matchedChunkIndex}`);
     meta.textContent = details.join(' · ') || `文档 ID：${hit.documentId || '-'}`;
-    const content = document.createElement('p');
-    content.className = 'hit-content';
-    content.textContent = hit.content || '';
-    card.append(top, meta, content);
+    card.append(top, meta);
+
+    if (Array.isArray(hit.chunks) && hit.chunks.length) {
+        card.append(sourceChunkDetails(hit.chunks));
+    } else {
+        const content = document.createElement('p');
+        content.className = 'hit-content';
+        content.textContent = hit.content || '';
+        card.append(content);
+    }
     return card;
 }
 
@@ -472,6 +627,155 @@ function renderChat(data) {
     }
 }
 
+function createStreamingChatView() {
+    elements.chatOutput.className = 'output-panel is-streaming';
+    elements.chatOutput.setAttribute('aria-busy', 'true');
+    elements.chatOutput.replaceChildren();
+
+    const head = document.createElement('div');
+    head.className = 'result-head';
+    const title = document.createElement('h3');
+    title.textContent = '正在检索知识库';
+    const status = document.createElement('span');
+    status.className = 'stream-status';
+    status.textContent = '实时连接中';
+    head.append(title, status);
+
+    const body = document.createElement('div');
+    body.className = 'answer-body markdown-body streaming-answer';
+    const placeholder = document.createElement('p');
+    placeholder.className = 'stream-placeholder';
+    placeholder.textContent = '正在整理引用并生成回答…';
+    body.append(placeholder);
+
+    elements.chatOutput.append(head, body);
+    return {
+        title,
+        status,
+        body,
+        answer: '',
+        sources: [],
+        usage: null,
+        failed: false,
+        done: false,
+        renderFrame: null,
+        sourceHeading: null,
+        sourceList: null,
+        usageElement: null,
+        errorElement: null
+    };
+}
+
+function renderStreamingAnswer(view, immediate = false) {
+    const render = () => {
+        view.renderFrame = null;
+        const errorElement = view.errorElement;
+        view.body.replaceChildren();
+        if (view.answer) {
+            view.body.append(renderMarkdown(view.answer));
+        } else if (!view.failed) {
+            const placeholder = document.createElement('p');
+            placeholder.className = 'stream-placeholder';
+            placeholder.textContent = '正在整理引用并生成回答…';
+            view.body.append(placeholder);
+        }
+        if (errorElement) view.body.append(errorElement);
+    };
+
+    if (immediate) {
+        if (view.renderFrame != null) cancelAnimationFrame(view.renderFrame);
+        render();
+    } else if (view.renderFrame == null) {
+        view.renderFrame = requestAnimationFrame(render);
+    }
+}
+
+function renderStreamingSources(view) {
+    if (view.sourceHeading) {
+        view.sourceHeading.remove();
+        view.sourceList.remove();
+        view.sourceHeading = null;
+        view.sourceList = null;
+    }
+    if (!view.sources.length) return;
+
+    view.sourceHeading = document.createElement('h4');
+    view.sourceHeading.className = 'source-heading';
+    view.sourceHeading.textContent = '引用来源';
+    view.sourceList = document.createElement('div');
+    view.sourceList.className = 'source-list';
+    view.sources.forEach(source => view.sourceList.append(hitCard(source, source.referenceId)));
+    elements.chatOutput.append(view.sourceHeading, view.sourceList);
+}
+
+function renderStreamUsage(view) {
+    if (!view.usage) return;
+    if (!view.usageElement) {
+        view.usageElement = document.createElement('div');
+        view.usageElement.className = 'usage';
+        elements.chatOutput.append(view.usageElement);
+    }
+    view.usageElement.textContent =
+        `Token：输入 ${view.usage.promptTokens ?? '-'} / 输出 ${view.usage.completionTokens ?? '-'} / 总计 ${view.usage.totalTokens ?? '-'}`;
+}
+
+function finishStreamingChat(view) {
+    if (view.done) return;
+    view.done = true;
+    renderStreamingAnswer(view, true);
+    renderStreamUsage(view);
+    elements.chatOutput.classList.remove('is-streaming');
+    elements.chatOutput.setAttribute('aria-busy', 'false');
+    view.status.classList.remove('stream-status');
+
+    if (view.failed) {
+        view.title.textContent = '回答生成失败';
+        view.status.textContent = '已结束';
+    } else {
+        view.title.textContent = view.sources.length ? '基于知识库的回答' : '未找到相关资料';
+        view.status.textContent = `${view.sources.length} 条引用 · 已完成`;
+    }
+}
+
+function failStreamingChat(view, message) {
+    view.failed = true;
+    renderStreamingAnswer(view, true);
+    if (!view.answer) view.body.className = 'notice';
+    if (!view.errorElement) {
+        view.errorElement = document.createElement('div');
+        view.errorElement.className = view.answer ? 'stream-error' : '';
+        view.body.append(view.errorElement);
+    }
+    view.errorElement.textContent = message || '回答生成失败，请稍后重试。';
+}
+
+function handleRagStreamEvent(view, message) {
+    const data = message.data;
+    if (!data || typeof data !== 'object') return;
+    const type = data.type || message.event;
+
+    if (type === 'sources' || type === 'source') {
+        view.sources = Array.isArray(data.sources) ? data.sources : [];
+        view.status.textContent = `${view.sources.length} 条引用 · 正在生成`;
+        renderStreamingSources(view);
+        return;
+    }
+    if (type === 'delta') {
+        view.answer += data.content || '';
+        view.title.textContent = view.sources.length ? '基于知识库的回答' : '正在生成回答';
+        renderStreamingAnswer(view);
+        return;
+    }
+    if (type === 'error') {
+        failStreamingChat(view, data.content);
+        return;
+    }
+    if (type === 'done') {
+        view.usage = data.usage || null;
+        finishStreamingChat(view);
+    }
+}
+
 elements.createToggle.addEventListener('click', () => {
     const open = elements.createForm.hidden;
     elements.createForm.hidden = !open;
@@ -581,20 +885,40 @@ document.querySelector('#chat-form').addEventListener('submit', async event => {
     event.preventDefault();
     if (!requireLibrary()) return;
     const form = new FormData(event.currentTarget);
+    const modelCode = String(form.get('modelCode') || '').trim();
+    if (!state.models.includes(modelCode)) {
+        notify('请选择一个可用的生成模型', 'error');
+        return;
+    }
     const button = event.submitter;
+    const streamView = createStreamingChatView();
     await withBusy(button, async () => {
-        const data = await api('/api/rag/chat', {
+        await streamSse('/api/rag/chat/stream', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
+            },
             body: JSON.stringify({
                 knowledgeBaseId: state.activeLibrary.id,
                 question: form.get('question').trim(),
                 topK: Number(form.get('topK')),
-                similarityThreshold: Number(form.get('similarityThreshold'))
+                similarityThreshold: Number(form.get('similarityThreshold')),
+                modelCode
             })
-        });
-        renderChat(data);
-    }).catch(error => notify(error.message, 'error'));
+        }, message => handleRagStreamEvent(streamView, message));
+        finishStreamingChat(streamView);
+    }).catch(error => {
+        failStreamingChat(streamView, error.message);
+        finishStreamingChat(streamView);
+        notify(error.message, 'error');
+    });
+});
+
+elements.chatModel.addEventListener('change', () => {
+    if (elements.chatModel.value) {
+        localStorage.setItem('atlas-chat-model', elements.chatModel.value);
+    }
 });
 
 document.querySelector('#chat-question').addEventListener('keydown', event => {
@@ -604,4 +928,5 @@ document.querySelector('#chat-question').addEventListener('keydown', event => {
 });
 
 updateDocumentActions();
+loadModels();
 loadLibraries();

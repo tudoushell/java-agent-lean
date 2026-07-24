@@ -22,6 +22,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 向量检索
+ */
 @RequiredArgsConstructor
 @Service
 public class RetrievalServiceImpl implements RetrievalService {

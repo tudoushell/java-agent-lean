@@ -3,8 +3,7 @@ package com.elliot.ai.rag.dto;
 import java.util.List;
 import java.util.UUID;
 
-public record RagSourceDto(
-        String referenceId,
+public record ExpandedSource(
         Integer rank,
         Double score,
         UUID matchedChunkId,

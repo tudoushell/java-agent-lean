@@ -61,6 +61,13 @@ public class DocumentChunkServiceImpl
     }
 
     @Override
+    public List<DocumentChunk> selectNeighborChunks(UUID documentId, int startIndex, int endIndex) {
+        return this.baseMapper.selectList(new LambdaQueryWrapper<DocumentChunk>()
+                .eq(DocumentChunk::getDocumentId, documentId)
+                .between(DocumentChunk::getChunkIndex, startIndex, endIndex));
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public int chunk(UUID documentId) {
         KbDocument kbDocument = kbDocumentMapper.selectById(documentId);

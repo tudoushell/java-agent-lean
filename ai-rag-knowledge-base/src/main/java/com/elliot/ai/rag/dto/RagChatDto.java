@@ -19,5 +19,8 @@ public record RagChatDto(
         Integer topK,
         @DecimalMin(value = "0.0", message = "相似度阀值不能小于 0")
         @DecimalMax(value = "1.0", message = "相似度阀值不能大于 1")
-        Double similarityThreshold) {
+        Double similarityThreshold,
+        @NotBlank(message = "模型不能为空")
+        String modelCode) {
+
 }
