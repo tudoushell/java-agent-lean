@@ -28,7 +28,7 @@ public class LocalFilesStorageService {
     private final Path rootDirectory;
 
     private static final Set<String> SUPPORTED_EXTENSIONS =
-            Set.of("txt", "md");
+            Set.of("txt", "md", "pdf", "docx");
 
 
     public LocalFilesStorageService(StorageProperties storageProperties) {
@@ -39,7 +39,7 @@ public class LocalFilesStorageService {
 
     public void delete(String relativePath) {
         if (!StringUtils.hasText(relativePath)) {
-           return;
+            return;
         }
         Path targetPath = rootDirectory.resolve(relativePath).normalize();
         if (!targetPath.startsWith(rootDirectory)) {
@@ -47,7 +47,8 @@ public class LocalFilesStorageService {
         }
         try {
             Files.delete(targetPath);
-        } catch (IOException e) {}
+        } catch (IOException e) {
+        }
 
     }
 
@@ -103,7 +104,7 @@ public class LocalFilesStorageService {
         }
     }
 
-    
+
     private void validate(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(
@@ -126,10 +127,10 @@ public class LocalFilesStorageService {
         if (!SUPPORTED_EXTENSIONS.contains(extension)) {
             throw new BusinessException(
                     ResultCode.PARAM_ERROR,
-                    "当前只支持 TXT 和 Markdown 文件"
+                    "当前只支持 TXT/Markdown/PDF/DOCX 文件"
             );
         }
-        
+
     }
 
     private String getExtension(String filename) {

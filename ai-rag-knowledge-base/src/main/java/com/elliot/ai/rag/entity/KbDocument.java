@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.elliot.ai.rag.enums.KbDocumentStatus;
+import com.elliot.ai.rag.enums.ParsedFormat;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -45,6 +46,13 @@ public class KbDocument {
 
     /** 文件内容的 SHA-256 摘要。 */
     private String sha256;
+
+    /** 解析后文件的存储格式，例如纯文本或结构化 JSONL。 */
+    private ParsedFormat parsedFormat;
+
+    private Integer pageCount;
+
+    private Integer parsedBlockCount;
 
     /**
      * 分片数量

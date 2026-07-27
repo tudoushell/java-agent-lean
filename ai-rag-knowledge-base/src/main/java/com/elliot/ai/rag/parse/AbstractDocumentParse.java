@@ -3,8 +3,7 @@ package com.elliot.ai.rag.parse;
 import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.config.StorageProperties;
-import com.elliot.ai.rag.dto.ParsedResult;
-import com.elliot.ai.rag.dto.ParsedText;
+import com.elliot.ai.rag.storage.parsed.ParsedArtifact;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -31,6 +30,13 @@ public abstract class AbstractDocumentParse {
     public abstract boolean isSupport(String extension);
 
     /**
+     * 获取当前解析器生成的解析结果文件后缀。
+     *
+     * @return 包含 {@code .} 的文件后缀，例如 {@code .txt}、{@code .jsonl}
+     */
+    protected abstract String parsedFileExtension();
+
+    /**
      * 读取文件内容，将文件写入解析后的目录
      *
      * @param sourcePath
@@ -38,7 +44,7 @@ public abstract class AbstractDocumentParse {
      * @return
      * @throws IOException
      */
-    protected abstract ParsedResult  parseFile(Path sourcePath, Path targetPath) throws IOException;
+    protected abstract ParsedArtifact parseFile(Path sourcePath, Path targetPath, String parsedRelativePath) throws IOException;
 
     /**
      * 解析已上传的文件，将文本内容保存到解析目录，并返回解析文件路径、预览内容和文本长度。
@@ -47,17 +53,13 @@ public abstract class AbstractDocumentParse {
      * @param storagePath 上传目录下的文件相对路径
      * @return 解析后的文本信息
      */
-    public ParsedText parse(UUID documentId, String storagePath) {
+    public ParsedArtifact parse(UUID documentId, String storagePath) {
         Path sourcePath = resolveSafely(uploadRoot, storagePath);
-        String parsedRelativePath = buildParsedPath(documentId);
+        String parsedRelativePath = buildParsedPath(documentId, parsedFileExtension());
         Path targetPath = resolveSafely(parseRoot, parsedRelativePath);
         try {
             Files.createDirectories(targetPath.getParent());
-            ParsedResult parsedResult = parseFile(sourcePath, targetPath);
-            if (!parsedResult.isHasText()) {
-                throw new BusinessException(ResultCode.FAIL, "文件内容为空");
-            }
-            return new ParsedText(parsedRelativePath, parsedResult.getLimitContent(), parsedResult.getCharCount());
+            return parseFile(sourcePath, targetPath, parsedRelativePath);
         } catch (BusinessException e) {
             deleteTargetFile(targetPath);
             throw e;
@@ -78,14 +80,14 @@ public abstract class AbstractDocumentParse {
         }
     }
 
-    private String buildParsedPath(UUID documentId) {
+    private String buildParsedPath(UUID documentId, String fileExtension) {
         LocalDate today = LocalDate.now();
 
         return Paths.get(
                 String.valueOf(today.getYear()),
                 String.format("%02d", today.getMonthValue()),
                 String.format("%02d", today.getDayOfMonth()),
-                documentId + ".txt"
+                documentId + fileExtension
         ).toString();
     }
 

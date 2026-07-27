@@ -1,4 +1,4 @@
-package com.elliot.ai.rag.dto;
+package com.elliot.ai.rag.storage.parsed;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -15,7 +15,7 @@ public class ParsedResult {
      */
     private String limitContent;
 
-    /** 解析结果中是否包含非空白字符。 */
+    /** 解析结果是否为空。 */
     private boolean hasText;
 
     /** 解析结果的字符数。 */

@@ -6,7 +6,7 @@ import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.dto.IndexResultDto;
 import com.elliot.ai.rag.dto.KbDocumentDto;
-import com.elliot.ai.rag.dto.ParsedText;
+import com.elliot.ai.rag.storage.parsed.ParsedArtifact;
 import com.elliot.ai.rag.dto.StoredFile;
 import com.elliot.ai.rag.entity.DocumentChunk;
 import com.elliot.ai.rag.entity.KbDocument;
@@ -129,10 +129,11 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
             if (parse == null) {
                 throw new BusinessException(ResultCode.FAIL, "暂不能解析该文件");
             }
-            ParsedText parsedText = parse.parse(kbDocument.getId(), kbDocument.getStoragePath());
-            kbDocument.setParsedStoragePath(parsedText.relativePath());
-            kbDocument.setParsedPreview(parsedText.preview());
-            kbDocument.setParsedCharCount(parsedText.charCount());
+            ParsedArtifact parsedArtifact = parse.parse(kbDocument.getId(), kbDocument.getStoragePath());
+            kbDocument.setParsedStoragePath(parsedArtifact.getRelativePath());
+            kbDocument.setParsedFormat(parsedArtifact.getParsedFormat());
+            kbDocument.setParsedPreview(parsedArtifact.getPreview());
+            kbDocument.setParsedCharCount(parsedArtifact.getCharCount());
             kbDocument.setStatus(KbDocumentStatus.PARSED);
             kbDocument.setErrorMessage(null);
         } catch (Exception e) {

@@ -1,7 +1,10 @@
 package com.elliot.ai.rag.parse;
 
+import com.elliot.ai.common.enums.ResultCode;
+import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.config.StorageProperties;
-import com.elliot.ai.rag.dto.ParsedResult;
+import com.elliot.ai.rag.enums.ParsedFormat;
+import com.elliot.ai.rag.storage.parsed.ParsedArtifact;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -29,9 +32,13 @@ public class TextDocumentParse extends AbstractDocumentParse {
         return SUPPORTED_TYPES.contains(extension);
     }
 
+    @Override
+    protected String parsedFileExtension() {
+        return ".txt";
+    }
 
     @Override
-    protected ParsedResult parseFile(Path sourcePath, Path targetPath) throws IOException {
+    protected ParsedArtifact parseFile(Path sourcePath, Path targetPath, String parsedRelationPath) throws IOException {
         StringBuilder preview = new StringBuilder(PREVIEW_LENGTH);
         long charCount = 0;
         boolean hasText = false;
@@ -71,6 +78,16 @@ public class TextDocumentParse extends AbstractDocumentParse {
                 }
             }
         }
-        return new ParsedResult(preview.toString(), hasText, charCount);
+        if (!hasText) {
+            throw new BusinessException(ResultCode.FAIL, "文件内容为空");
+        }
+        return new ParsedArtifact(
+                parsedRelationPath,
+                ParsedFormat.PLAIN_TEXT,
+                preview.toString(),
+                charCount,
+                null,
+                null
+        );
     }
 }
