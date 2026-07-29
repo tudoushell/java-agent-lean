@@ -22,7 +22,7 @@ public class ParsedArtifact {
     /** JSONL 中解析块的数量；纯文本格式时为 {@code null}。 */
     private final Integer blockCount;
 
-    /** 原始文档总页数；不适用或无法确定时为 {@code null}。 */
+    /** 原始文档总页数 PDF。 */
     private final Integer pageCount;
 
     public ParsedArtifact(

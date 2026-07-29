@@ -49,9 +49,14 @@ public class KbDocument {
 
     /** 解析后文件的存储格式，例如纯文本或结构化 JSONL。 */
     private ParsedFormat parsedFormat;
-
+    /**
+     * 解析后的PDF页数
+     */
     private Integer pageCount;
 
+    /**
+     * 解析后的结构化块数量
+     */
     private Integer parsedBlockCount;
 
     /**

@@ -9,9 +9,11 @@ import com.elliot.ai.rag.config.StorageProperties;
 import com.elliot.ai.rag.entity.DocumentChunk;
 import com.elliot.ai.rag.entity.KbDocument;
 import com.elliot.ai.rag.enums.KbDocumentStatus;
+import com.elliot.ai.rag.enums.ParsedFormat;
 import com.elliot.ai.rag.mapper.DocumentChunkMapper;
 import com.elliot.ai.rag.mapper.KbDocumentMapper;
 import com.elliot.ai.rag.service.DocumentChunkService;
+import com.elliot.ai.rag.service.StructuredParsedStorageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
@@ -47,17 +49,19 @@ public class DocumentChunkServiceImpl
     private final StorageProperties storageProperties;
     private final Path parsedRootPath;
     private final TokenTextSplitter tokenTextSplitter;
+    private final StructuredParsedStorageService structuredParsedStorageService;
 
     public DocumentChunkServiceImpl(KbDocumentMapper kbDocumentMapper,
                                     ChunkProperties chunkProperties,
                                     StorageProperties storageProperties,
-                                    TokenTextSplitter tokenTextSplitter) {
+                                    TokenTextSplitter tokenTextSplitter, StructuredParsedStorageService structuredParsedStorageService) {
         this.kbDocumentMapper = kbDocumentMapper;
         this.chunkProperties = chunkProperties;
         this.storageProperties = storageProperties;
         this.parsedRootPath = Paths.get(storageProperties.getParsedDirectory())
                 .toAbsolutePath().normalize();
         this.tokenTextSplitter = tokenTextSplitter;
+        this.structuredParsedStorageService = structuredParsedStorageService;
     }
 
     @Override
@@ -97,6 +101,20 @@ public class DocumentChunkServiceImpl
     }
 
     private int streamAndSaveChunks(KbDocument kbDocument) {
+        if (ParsedFormat.STRUCTURED_JSONL.equals(kbDocument.getParsedFormat())) {
+            return streamPlainTextChunks(kbDocument);
+        }
+        return streamStructuredChunks(kbDocument);
+    }
+
+    private int streamStructuredChunks(KbDocument kbDocument) {
+        List<DocumentChunk> batch = new ArrayList<>(chunkProperties.getDatabaseBatchSize());
+        
+
+        return 0;
+    }
+
+    private int streamPlainTextChunks(KbDocument kbDocument) {
         List<DocumentChunk> batch = new ArrayList<>(chunkProperties.getDatabaseBatchSize());
         int nextChunkIndex = 0;
         int blockLimit = chunkProperties.getReadBufferChars();
@@ -118,7 +136,7 @@ public class DocumentChunkServiceImpl
                 }
             }
             if (!pending.isEmpty()) {
-               nextChunkIndex = splitBlockAndCollect(kbDocument, pending.toString(), nextChunkIndex, batch);
+                nextChunkIndex = splitBlockAndCollect(kbDocument, pending.toString(), nextChunkIndex, batch);
             }
             flushBatch(batch);
             return nextChunkIndex;

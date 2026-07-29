@@ -6,7 +6,6 @@ import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.dto.IndexResultDto;
 import com.elliot.ai.rag.dto.KbDocumentDto;
-import com.elliot.ai.rag.storage.parsed.ParsedArtifact;
 import com.elliot.ai.rag.dto.StoredFile;
 import com.elliot.ai.rag.entity.DocumentChunk;
 import com.elliot.ai.rag.entity.KbDocument;
@@ -20,6 +19,7 @@ import com.elliot.ai.rag.mapper.KnowledgeBaseMapper;
 import com.elliot.ai.rag.parse.AbstractDocumentParse;
 import com.elliot.ai.rag.service.KbDocumentService;
 import com.elliot.ai.rag.service.LocalFilesStorageService;
+import com.elliot.ai.rag.storage.parsed.ParsedArtifact;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -130,10 +130,13 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
                 throw new BusinessException(ResultCode.FAIL, "暂不能解析该文件");
             }
             ParsedArtifact parsedArtifact = parse.parse(kbDocument.getId(), kbDocument.getStoragePath());
+
             kbDocument.setParsedStoragePath(parsedArtifact.getRelativePath());
             kbDocument.setParsedFormat(parsedArtifact.getParsedFormat());
             kbDocument.setParsedPreview(parsedArtifact.getPreview());
             kbDocument.setParsedCharCount(parsedArtifact.getCharCount());
+            kbDocument.setPageCount(parsedArtifact.getPageCount());
+            kbDocument.setParsedBlockCount(parsedArtifact.getBlockCount());
             kbDocument.setStatus(KbDocumentStatus.PARSED);
             kbDocument.setErrorMessage(null);
         } catch (Exception e) {
