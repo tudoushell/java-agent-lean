@@ -25,6 +25,8 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -43,7 +45,7 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
         implements KbDocumentService {
 
     private final static String EMBEDDING_MODEL_NAME = "nomic-embed-text";
-    private static final int INDEX_BATCH_SIZE = 10;
+    private static final int INDEX_BATCH_SIZE = 1000;
 
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
@@ -102,6 +104,7 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
         }
 
         StoredFile storedFile = localFilesStorageService.store(file);
+        registerFileTransactionCleanup(storedFile);
         if (existsSameFile(knowledgeBaseId, storedFile.sha256())) {
             throw new BusinessException(
                     ResultCode.FAIL,
@@ -130,6 +133,7 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
                 throw new BusinessException(ResultCode.FAIL, "暂不能解析该文件");
             }
             ParsedArtifact parsedArtifact = parse.parse(kbDocument.getId(), kbDocument.getStoragePath());
+            registerParsedFileTransactionCleanup(parsedArtifact);
 
             kbDocument.setParsedStoragePath(parsedArtifact.getRelativePath());
             kbDocument.setParsedFormat(parsedArtifact.getParsedFormat());
@@ -145,6 +149,79 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
         }
         this.updateById(kbDocument);
         return toDto(kbDocument);
+    }
+
+    private void registerFileTransactionCleanup(StoredFile storedFile) {
+        registerTransactionRollbackCleanup(
+                () -> localFilesStorageService.delete(storedFile.relativePath())
+        );
+    }
+
+    private void registerParsedFileTransactionCleanup(ParsedArtifact parsedArtifact) {
+        registerTransactionRollbackCleanup(
+                () -> localFilesStorageService.deleteParsed(parsedArtifact.getRelativePath())
+        );
+    }
+
+    /**
+     * 注册数据库事务回滚后的文件补偿操作。
+     *
+     * <p>本地文件系统不参与数据库事务，因此需要在事务未提交时主动删除已经生成的文件。</p>
+     *
+     * @param cleanup 事务未提交时执行的文件清理操作
+     */
+    private void registerTransactionRollbackCleanup(Runnable cleanup) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cleanup.run();
+            throw new IllegalStateException("当前没有可用的事务同步，已清理生成文件");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    cleanup.run();
+                }
+            }
+        });
+    }
+
+    @Override
+    public List<KbDocumentDto> listDocuments(UUID knowledgeBaseId) {
+        if (knowledgeBaseMapper.selectById(knowledgeBaseId) == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "知识库不存在");
+        }
+        return this.list(new LambdaQueryWrapper<KbDocument>()
+                        .eq(KbDocument::getKnowledgeBaseId, knowledgeBaseId)
+                        .orderByDesc(KbDocument::getCreatedAt))
+                .stream()
+                .map(this::toDto)
+                .toList();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteDocument(UUID knowledgeBaseId, UUID documentId) {
+        KbDocument document = this.getOne(new LambdaQueryWrapper<KbDocument>()
+                .eq(KbDocument::getId, documentId)
+                .eq(KbDocument::getKnowledgeBaseId, knowledgeBaseId));
+        if (document == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "文档不存在或不属于该知识库");
+        }
+
+        try {
+            vectorStore.delete("documentId == '" + documentId + "'");
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.FAIL, "删除文档向量失败：" + e.getMessage());
+        }
+
+        documentChunkMapper.delete(new LambdaQueryWrapper<DocumentChunk>()
+                .eq(DocumentChunk::getDocumentId, documentId));
+        if (!this.removeById(documentId)) {
+            throw new BusinessException(ResultCode.FAIL, "删除文档记录失败");
+        }
+
+        localFilesStorageService.delete(document.getStoragePath());
+        localFilesStorageService.deleteParsed(document.getParsedStoragePath());
     }
 
     private boolean existsSameFile(UUID knowledgeBaseId, String sha256) {
@@ -166,6 +243,10 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
         documentDto.setSizeBytes(kbDocument.getSizeBytes());
         documentDto.setSha256(kbDocument.getSha256());
         documentDto.setStatus(kbDocument.getStatus());
+        documentDto.setChunkCount(kbDocument.getChunkCount());
+        documentDto.setVectorCount(kbDocument.getVectorCount());
+        documentDto.setCreatedAt(kbDocument.getCreatedAt());
+        documentDto.setUpdatedAt(kbDocument.getUpdatedAt());
         return documentDto;
     }
 

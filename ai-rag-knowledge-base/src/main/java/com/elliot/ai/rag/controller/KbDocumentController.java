@@ -14,6 +14,8 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -36,14 +39,34 @@ public class KbDocumentController {
     private final DocumentChunkService documentChunkService;
 
     /**
+     * 查询指定知识库下的文档列表。
+     *
+     * @param knowledgeBaseId 知识库 ID
+     * @return 文档列表
+     */
+    @GetMapping
+    @Operation(summary = "查询知识库文档列表", description = "按创建时间倒序查询指定知识库下的全部文档。")
+    public Result<List<KbDocumentDto>> list(
+            @Parameter(
+                    name = "knowledgeBaseId",
+                    description = "知识库 ID",
+                    in = ParameterIn.PATH,
+                    required = true
+            )
+            @PathVariable("knowledgeBaseId") UUID knowledgeBaseId
+    ) {
+        return Result.buildSuccess(kbDocumentService.listDocuments(knowledgeBaseId));
+    }
+
+    /**
      * 向指定知识库上传文档。
      *
      * @param knowledgeBaseId 目标知识库 ID
-     * @param file            待上传的 TXT 或 Markdown 文件
+     * @param file            待上传的 TXT、Markdown、PDF 或 DOCX 文件
      * @return 已创建的知识库文档信息
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "上传知识库文档", description = "向指定知识库上传 TXT 或 Markdown 文档。")
+    @Operation(summary = "上传知识库文档", description = "向指定知识库上传 TXT、Markdown、PDF 或 DOCX 文档。")
     public Result<KbDocumentDto> upload(
             @Parameter(
                     name = "knowledgeBaseId",
@@ -119,5 +142,34 @@ public class KbDocumentController {
             throw new BusinessException(ResultCode.FAIL, "文档不存在或不属于该知识库");
         }
         return Result.buildSuccess(kbDocumentService.index(documentId));
+    }
+
+    /**
+     * 删除指定知识库下的文档。
+     *
+     * @param knowledgeBaseId 所属知识库 ID
+     * @param documentId 待删除的文档 ID
+     * @return 删除成功响应
+     */
+    @DeleteMapping("/{documentId}")
+    @Operation(summary = "删除知识库文档", description = "删除文档记录及关联的 Chunk、向量和存储文件。")
+    public Result<Void> delete(
+            @Parameter(
+                    name = "knowledgeBaseId",
+                    description = "所属知识库 ID",
+                    in = ParameterIn.PATH,
+                    required = true
+            )
+            @PathVariable("knowledgeBaseId") UUID knowledgeBaseId,
+            @Parameter(
+                    name = "documentId",
+                    description = "待删除的文档 ID",
+                    in = ParameterIn.PATH,
+                    required = true
+            )
+            @PathVariable("documentId") UUID documentId
+    ) {
+        kbDocumentService.deleteDocument(knowledgeBaseId, documentId);
+        return Result.buildSuccess();
     }
 }

@@ -2,7 +2,7 @@ const state = {
     libraries: [],
     activeLibrary: null,
     models: [],
-    documents: JSON.parse(localStorage.getItem('atlas-documents') || '{}')
+    documents: []
 };
 
 const elements = {
@@ -17,6 +17,9 @@ const elements = {
     fileName: document.querySelector('#file-name'),
     documentId: document.querySelector('#document-id'),
     documentSummary: document.querySelector('#document-summary'),
+    documentList: document.querySelector('#document-list'),
+    documentCount: document.querySelector('#document-count'),
+    refreshDocuments: document.querySelector('#refresh-documents'),
     chunkButton: document.querySelector('#chunk-document'),
     indexButton: document.querySelector('#index-document'),
     retrievalOutput: document.querySelector('#retrieval-output'),
@@ -210,7 +213,7 @@ async function selectLibrary(id) {
         localStorage.setItem('atlas-active-library', id);
         renderLibraries();
         renderActiveLibrary();
-        restoreDocument();
+        await loadDocuments();
     } catch (error) {
         notify(error.message, 'error');
     }
@@ -218,12 +221,14 @@ async function selectLibrary(id) {
 
 function clearActiveLibrary() {
     state.activeLibrary = null;
+    state.documents = [];
     elements.activeName.textContent = '选择一个知识库';
     elements.activeDescription.textContent = '从左侧选择知识库，开始整理与检索资料。';
     elements.activeBadge.textContent = '未选择';
     elements.activeBadge.className = 'active-badge';
     elements.documentId.value = '';
     renderDocument(null);
+    renderDocumentList();
 }
 
 function renderActiveLibrary() {
@@ -234,23 +239,135 @@ function renderActiveLibrary() {
     elements.activeBadge.className = `active-badge${library.status === 'ENABLED' ? ' enabled' : ''}`;
 }
 
-function persistDocument(document) {
-    if (!state.activeLibrary || !document) return;
-    state.documents[state.activeLibrary.id] = document;
-    localStorage.setItem('atlas-documents', JSON.stringify(state.documents));
-}
+async function loadDocuments(preferredId) {
+    if (!state.activeLibrary) {
+        state.documents = [];
+        renderDocumentList();
+        return;
+    }
+    const libraryId = state.activeLibrary.id;
+    elements.documentList.innerHTML = '<div class="document-list-empty">正在读取文档…</div>';
+    const documents = await api(`/api/knowledge-bases/${encodeURIComponent(libraryId)}/documents`);
+    if (state.activeLibrary?.id !== libraryId) return;
 
-function restoreDocument() {
-    const document = state.documents[state.activeLibrary.id] || null;
-    elements.documentId.value = document?.id || '';
-    renderDocument(document);
+    state.documents = Array.isArray(documents) ? documents : [];
+    const selected = state.documents.find(item => item.id === preferredId)
+        || state.documents.find(item => item.id === elements.documentId.value)
+        || state.documents[0]
+        || null;
+    elements.documentId.value = selected?.id || '';
+    renderDocument(selected);
+    renderDocumentList();
 }
 
 function currentDocument() {
     const id = elements.documentId.value.trim();
     if (!id || !state.activeLibrary) return null;
-    const saved = state.documents[state.activeLibrary.id];
-    return saved?.id === id ? saved : { id, status: 'UNKNOWN', originalName: '已有文档' };
+    return state.documents.find(item => item.id === id) || null;
+}
+
+function selectDocument(id) {
+    const selected = state.documents.find(item => item.id === id) || null;
+    elements.documentId.value = selected?.id || '';
+    renderDocument(selected);
+    renderDocumentList();
+}
+
+function formatBytes(value) {
+    const size = Number(value);
+    if (!Number.isFinite(size) || size < 0) return '大小未知';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function statusLabel(status) {
+    return {
+        UPLOADED: '已上传',
+        PARSED: '已解析',
+        CHUNKED: '已切分',
+        INDEXING: '索引中',
+        INDEXED: '已索引',
+        INDEX_FAILED: '索引失败',
+        FAILED: '处理失败'
+    }[status] || status || '未知状态';
+}
+
+function renderDocumentList() {
+    elements.documentList.replaceChildren();
+    elements.documentCount.textContent = `${state.documents.length} 个文档`;
+    elements.refreshDocuments.disabled = !state.activeLibrary;
+
+    if (!state.activeLibrary || !state.documents.length) {
+        const empty = document.createElement('div');
+        empty.className = 'document-list-empty';
+        empty.textContent = state.activeLibrary
+            ? '这个知识库还没有文档，从上方上传第一份资料。'
+            : '选择知识库后显示已上传文档。';
+        elements.documentList.append(empty);
+        return;
+    }
+
+    const selectedId = elements.documentId.value;
+    state.documents.forEach(documentInfo => {
+        const row = document.createElement('article');
+        row.className = `document-row${documentInfo.id === selectedId ? ' selected' : ''}`;
+
+        const selectButton = document.createElement('button');
+        selectButton.type = 'button';
+        selectButton.className = 'document-select';
+        selectButton.setAttribute('aria-pressed', String(documentInfo.id === selectedId));
+
+        const type = document.createElement('span');
+        type.className = 'document-type';
+        type.textContent = (documentInfo.fileExtension || 'FILE').toUpperCase();
+
+        const body = document.createElement('span');
+        body.className = 'document-file-body';
+        const name = document.createElement('strong');
+        name.textContent = documentInfo.originalName || '未命名文档';
+        const meta = document.createElement('small');
+        const details = [
+            formatBytes(documentInfo.sizeBytes),
+            formatDate(documentInfo.createdAt)
+        ];
+        if (documentInfo.chunkCount != null) details.push(`${documentInfo.chunkCount} Chunk`);
+        if (documentInfo.vectorCount != null) details.push(`${documentInfo.vectorCount} 向量`);
+        meta.textContent = details.join(' · ');
+        body.append(name, meta);
+
+        const status = document.createElement('span');
+        const normalizedStatus = String(documentInfo.status || '').toLowerCase();
+        status.className = `document-status ${normalizedStatus}`;
+        status.textContent = statusLabel(documentInfo.status);
+        selectButton.append(type, body, status);
+        selectButton.addEventListener('click', () => selectDocument(documentInfo.id));
+
+        const deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'document-delete';
+        deleteButton.textContent = '删除';
+        deleteButton.setAttribute('aria-label', `删除文档 ${documentInfo.originalName || documentInfo.id}`);
+        deleteButton.addEventListener('click', () => deleteDocument(documentInfo, deleteButton));
+
+        row.append(selectButton, deleteButton);
+        elements.documentList.append(row);
+    });
+}
+
+async function deleteDocument(documentInfo, button) {
+    if (!state.activeLibrary) return;
+    const confirmed = window.confirm(`确定删除“${documentInfo.originalName || documentInfo.id}”吗？\n关联的 Chunk 和向量也会一并删除。`);
+    if (!confirmed) return;
+
+    await withBusy(button, async () => {
+        await api(
+            `/api/knowledge-bases/${encodeURIComponent(state.activeLibrary.id)}/documents/${encodeURIComponent(documentInfo.id)}`,
+            { method: 'DELETE' }
+        );
+        await loadDocuments();
+        notify(`“${documentInfo.originalName || '文档'}”已删除`);
+    }).catch(error => notify(error.message, 'error'));
 }
 
 function renderDocument(documentInfo) {
@@ -290,7 +407,7 @@ function setPipeline(status) {
 }
 
 function updateDocumentActions() {
-    const enabled = Boolean(state.activeLibrary && elements.documentId.value.trim());
+    const enabled = Boolean(state.activeLibrary && currentDocument());
     elements.chunkButton.disabled = !enabled;
     elements.indexButton.disabled = !enabled;
 }
@@ -810,10 +927,14 @@ elements.createForm.addEventListener('submit', async event => {
 });
 
 document.querySelector('#refresh-libraries').addEventListener('click', () => loadLibraries());
+elements.refreshDocuments.addEventListener('click', () => {
+    loadDocuments(currentDocument()?.id).catch(error => notify(error.message, 'error'));
+});
 document.querySelectorAll('.view-tab').forEach(tab => tab.addEventListener('click', () => switchView(tab.dataset.view)));
 
 elements.fileInput.addEventListener('change', () => {
-    elements.fileName.textContent = elements.fileInput.files[0]?.name || '选择 TXT 或 Markdown 文件';
+    elements.fileName.textContent = elements.fileInput.files[0]?.name
+        || '选择 TXT、Markdown、PDF 或 Word 文件';
 });
 
 document.querySelector('#upload-form').addEventListener('submit', async event => {
@@ -826,24 +947,20 @@ document.querySelector('#upload-form').addEventListener('submit', async event =>
         const form = new FormData();
         form.append('file', file);
         const uploaded = await api(`/api/knowledge-bases/${state.activeLibrary.id}/documents`, { method: 'POST', body: form });
-        elements.documentId.value = uploaded.id;
-        persistDocument(uploaded);
-        renderDocument(uploaded);
+        event.currentTarget.reset();
+        elements.fileName.textContent = '选择 TXT、Markdown、PDF 或 Word 文件';
+        await loadDocuments(uploaded.id);
         notify(`“${uploaded.originalName}”已上传并解析`);
     }).catch(error => notify(error.message, 'error'));
 });
 
-elements.documentId.addEventListener('input', () => renderDocument(currentDocument()));
-
 elements.chunkButton.addEventListener('click', async () => {
     if (!requireLibrary()) return;
     const document = currentDocument();
-    if (!document) return notify('请填写文档 ID', 'error');
+    if (!document) return notify('请从文件列表选择文档', 'error');
     await withBusy(elements.chunkButton, async () => {
         const count = await api(`/api/knowledge-bases/${state.activeLibrary.id}/documents/${encodeURIComponent(document.id)}/chunks`, { method: 'POST' });
-        const updated = { ...document, status: 'CHUNKED', chunkCount: count };
-        persistDocument(updated);
-        renderDocument(updated);
+        await loadDocuments(document.id);
         notify(`文本切分完成，共 ${count} 个 Chunk`);
     }).catch(error => notify(error.message, 'error'));
 });
@@ -851,12 +968,10 @@ elements.chunkButton.addEventListener('click', async () => {
 elements.indexButton.addEventListener('click', async () => {
     if (!requireLibrary()) return;
     const document = currentDocument();
-    if (!document) return notify('请填写文档 ID', 'error');
+    if (!document) return notify('请从文件列表选择文档', 'error');
     await withBusy(elements.indexButton, async () => {
         const indexed = await api(`/api/knowledge-bases/${state.activeLibrary.id}/documents/${encodeURIComponent(document.id)}/index`, { method: 'POST' });
-        const updated = { ...document, status: indexed.status, vectorCount: indexed.vectorCount, embeddingModel: indexed.embeddingModel };
-        persistDocument(updated);
-        renderDocument(updated);
+        await loadDocuments(document.id);
         notify(`向量索引完成，共 ${indexed.vectorCount} 条`);
     }).catch(error => notify(error.message, 'error'));
 });

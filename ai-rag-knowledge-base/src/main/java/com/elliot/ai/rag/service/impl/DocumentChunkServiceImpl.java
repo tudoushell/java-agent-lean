@@ -101,7 +101,7 @@ public class DocumentChunkServiceImpl
     }
 
     private int streamAndSaveChunks(KbDocument kbDocument) {
-        if (ParsedFormat.STRUCTURED_JSONL.equals(kbDocument.getParsedFormat())) {
+        if (ParsedFormat.PLAIN_TEXT.equals(kbDocument.getParsedFormat())) {
             return streamPlainTextChunks(kbDocument);
         }
         return streamStructuredChunks(kbDocument);
@@ -109,9 +109,22 @@ public class DocumentChunkServiceImpl
 
     private int streamStructuredChunks(KbDocument kbDocument) {
         List<DocumentChunk> batch = new ArrayList<>(chunkProperties.getDatabaseBatchSize());
-        
-
-        return 0;
+        Path parsedFile = parsedRootPath.resolve(kbDocument.getParsedStoragePath()).normalize();
+        if (!parsedFile.startsWith(parsedRootPath)) {
+            throw new BusinessException(ResultCode.FAIL, "解析文本路径非法");
+        }
+        int[] nextChunkIndex = {0};
+        structuredParsedStorageService.forEachBlock(parsedFile, parsedBlock -> {
+            nextChunkIndex[0] = splitBlockAndCollect(
+                    kbDocument,
+                    parsedBlock.text(),
+                    nextChunkIndex[0],
+                    batch,
+                    parsedBlock.sectionTitle(),
+                    parsedBlock.pageNumber());
+        });
+        flushBatch(batch);
+        return nextChunkIndex[0];
     }
 
     private int streamPlainTextChunks(KbDocument kbDocument) {
@@ -132,11 +145,11 @@ public class DocumentChunkServiceImpl
                     int cutPoint = findCutPoint(pending, blockLimit);
                     String block = pending.substring(0, cutPoint);
                     pending.delete(0, cutPoint);
-                    nextChunkIndex = splitBlockAndCollect(kbDocument, block, nextChunkIndex, batch);
+                    nextChunkIndex = splitBlockAndCollect(kbDocument, block, nextChunkIndex, batch, null, null);
                 }
             }
             if (!pending.isEmpty()) {
-                nextChunkIndex = splitBlockAndCollect(kbDocument, pending.toString(), nextChunkIndex, batch);
+                nextChunkIndex = splitBlockAndCollect(kbDocument, pending.toString(), nextChunkIndex, batch, null, null);
             }
             flushBatch(batch);
             return nextChunkIndex;
@@ -149,11 +162,15 @@ public class DocumentChunkServiceImpl
         }
     }
 
-    private int splitBlockAndCollect(KbDocument kbDocument, String block, int nextChunkIndex, List<DocumentChunk> batch) {
+    private int splitBlockAndCollect(KbDocument kbDocument,
+                                     String block,
+                                     int nextChunkIndex,
+                                     List<DocumentChunk> batch,
+                                     String sectionTitle,
+                                     Integer pageNumber) {
         if (!StringUtils.hasText(block)) {
             return nextChunkIndex;
         }
-        // 元数据在切分环节暂未使用，Chunk 字段直接取自 kbDocument，向量化入库时再补充。
         Document document = new Document(block);
         List<Document> splitDocuments = tokenTextSplitter.apply(List.of(document));
         for (Document splitDocument : splitDocuments) {
@@ -162,7 +179,7 @@ public class DocumentChunkServiceImpl
                 continue;
             }
             String normalizedContent = content.trim();
-            DocumentChunk documentChunk = buildDocumentChunk(kbDocument, nextChunkIndex, normalizedContent);
+            DocumentChunk documentChunk = buildDocumentChunk(kbDocument, nextChunkIndex, normalizedContent, sectionTitle, pageNumber);
             batch.add(documentChunk);
             nextChunkIndex++;
             if (batch.size() >= chunkProperties.getDatabaseBatchSize()) {
@@ -172,7 +189,11 @@ public class DocumentChunkServiceImpl
         return nextChunkIndex;
     }
 
-    private DocumentChunk buildDocumentChunk(KbDocument kbDocument, int chunkIndex, String normalizedContent) {
+    private DocumentChunk buildDocumentChunk(KbDocument kbDocument,
+                                             int chunkIndex,
+                                             String normalizedContent,
+                                             String sectionTitle,
+                                             Integer pageNumber) {
         DocumentChunk chunk = new DocumentChunk();
         chunk.setId(UUID.randomUUID());
         chunk.setKnowledgeBaseId(
@@ -188,8 +209,8 @@ public class DocumentChunkServiceImpl
         chunk.setTokenCount(null);
 
         chunk.setContentHash(sha256(normalizedContent));
-        chunk.setSectionTitle(null);
-        chunk.setPageNumber(null);
+        chunk.setSectionTitle(sectionTitle);
+        chunk.setPageNumber(pageNumber);
         return chunk;
     }
 

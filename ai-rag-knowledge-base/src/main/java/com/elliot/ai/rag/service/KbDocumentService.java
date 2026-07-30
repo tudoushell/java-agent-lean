@@ -6,6 +6,7 @@ import com.elliot.ai.rag.dto.KbDocumentDto;
 import com.elliot.ai.rag.entity.KbDocument;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 /** 知识库文档业务服务。 */
@@ -27,4 +28,20 @@ public interface KbDocumentService extends IService<KbDocument> {
      * @return 创建后的知识库文档信息
      */
     KbDocumentDto upload(UUID knowledgeBaseId, MultipartFile file);
+
+    /**
+     * 查询指定知识库下的全部文档。
+     *
+     * @param knowledgeBaseId 知识库 ID
+     * @return 按创建时间倒序排列的文档列表
+     */
+    List<KbDocumentDto> listDocuments(UUID knowledgeBaseId);
+
+    /**
+     * 删除指定知识库下的文档及其 Chunk、向量和存储文件。
+     *
+     * @param knowledgeBaseId 知识库 ID
+     * @param documentId 文档 ID
+     */
+    void deleteDocument(UUID knowledgeBaseId, UUID documentId);
 }

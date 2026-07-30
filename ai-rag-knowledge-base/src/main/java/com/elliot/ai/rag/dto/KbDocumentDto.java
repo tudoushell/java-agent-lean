@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -56,4 +57,20 @@ public class KbDocumentDto {
     /** 文档当前的处理状态。 */
     @Schema(description = "文档当前的处理状态")
     private KbDocumentStatus status;
+
+    /** 已生成的 Chunk 数量。 */
+    @Schema(description = "已生成的 Chunk 数量")
+    private Integer chunkCount;
+
+    /** 已写入向量库的向量数量。 */
+    @Schema(description = "已写入向量库的向量数量")
+    private Integer vectorCount;
+
+    /** 文档创建时间。 */
+    @Schema(description = "文档创建时间")
+    private OffsetDateTime createdAt;
+
+    /** 文档更新时间。 */
+    @Schema(description = "文档更新时间")
+    private OffsetDateTime updatedAt;
 }

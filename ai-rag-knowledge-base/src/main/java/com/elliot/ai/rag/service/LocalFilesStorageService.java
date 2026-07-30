@@ -4,6 +4,7 @@ import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.config.StorageProperties;
 import com.elliot.ai.rag.dto.StoredFile;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,9 +24,11 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
+@Slf4j
 public class LocalFilesStorageService {
 
     private final Path rootDirectory;
+    private final Path parsedDirectory;
 
     private static final Set<String> SUPPORTED_EXTENSIONS =
             Set.of("txt", "md", "pdf", "docx");
@@ -34,22 +37,34 @@ public class LocalFilesStorageService {
     public LocalFilesStorageService(StorageProperties storageProperties) {
         this.rootDirectory = Paths.get(storageProperties.getRootDirectory())
                 .toAbsolutePath().normalize();
+        this.parsedDirectory = Paths.get(storageProperties.getParsedDirectory())
+                .toAbsolutePath().normalize();
     }
 
 
     public void delete(String relativePath) {
+        deleteUnderRoot(rootDirectory, relativePath);
+    }
+
+    public void deleteParsed(String relativePath) {
+        deleteUnderRoot(parsedDirectory, relativePath);
+    }
+
+    private void deleteUnderRoot(Path root, String relativePath) {
         if (!StringUtils.hasText(relativePath)) {
             return;
         }
-        Path targetPath = rootDirectory.resolve(relativePath).normalize();
-        if (!targetPath.startsWith(rootDirectory)) {
+        Path targetPath = root.resolve(relativePath).normalize();
+        if (!targetPath.startsWith(root)) {
+            log.warn("拒绝删除存储根目录之外的文件：{}", relativePath);
             return;
         }
         try {
-            Files.delete(targetPath);
+            Files.deleteIfExists(targetPath);
         } catch (IOException e) {
+            // 文档记录删除不应因文件已被手工移除或暂时无法清理而失败。
+            log.warn("删除存储文件失败：{}", targetPath, e);
         }
-
     }
 
 

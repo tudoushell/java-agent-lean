@@ -63,7 +63,7 @@
                     <p class="section-kicker">INGESTION PIPELINE</p>
                     <h2>把资料变成可检索知识</h2>
                 </div>
-                <p>当前接口支持 TXT 与 Markdown。上传后依次切分文本、生成向量，文档才会进入检索范围。</p>
+                <p>支持 TXT、Markdown、PDF 与 DOCX。上传后依次切分文本、生成向量，文档才会进入检索范围。</p>
             </div>
 
             <div class="pipeline" aria-label="文档处理流程">
@@ -81,25 +81,43 @@
                     <p>文件会上传到当前知识库，并同步完成文本解析。</p>
                     <label class="file-drop" for="document-file">
                         <span class="file-icon">↥</span>
-                        <strong id="file-name">选择 TXT 或 Markdown 文件</strong>
-                        <small>单个文件最大 10 MB</small>
+                        <strong id="file-name">选择 TXT、Markdown、PDF 或 Word 文件</strong>
+                        <small>支持 TXT、MD、PDF、DOCX，单个文件最大 10 MB</small>
                     </label>
-                    <input id="document-file" name="file" type="file" accept=".txt,.md,text/plain,text/markdown" required hidden>
+                    <input id="document-file" name="file" type="file"
+                           accept=".txt,.md,.pdf,.docx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                           required hidden>
                     <button class="button button-primary button-block" type="submit">上传并解析</button>
                 </form>
 
                 <section class="card process-card">
                     <div class="card-label">处理资料</div>
                     <h3>文档状态</h3>
-                    <p>上传完成后可直接处理，也可以填入已有文档 ID。</p>
-                    <label for="document-id">文档 ID</label>
-                    <input id="document-id" class="mono-input" type="text" placeholder="UUID">
+                    <p>从下方文件列表选择文档，再进行文本切分或向量索引。</p>
+                    <label for="document-id">当前文档 ID</label>
+                    <input id="document-id" class="mono-input" type="text" placeholder="尚未选择" readonly>
                     <div id="document-summary" class="document-summary empty">尚未选择文档</div>
                     <div class="document-actions">
                         <button id="chunk-document" class="button button-secondary" type="button">切分文本</button>
                         <button id="index-document" class="button button-primary" type="button">生成向量</button>
                     </div>
-                    <p class="microcopy">后端暂未提供文档列表接口，因此历史文档需填写 ID；本次上传记录会保存在浏览器中。</p>
+                    <p class="microcopy">处理状态会保存在服务端，刷新页面后仍可继续操作。</p>
+                </section>
+
+                <section class="card document-list-card">
+                    <div class="document-list-head">
+                        <div>
+                            <div class="card-label">知识库文件</div>
+                            <h3>已上传文档</h3>
+                        </div>
+                        <div class="document-list-tools">
+                            <span id="document-count">0 个文档</span>
+                            <button id="refresh-documents" class="button button-secondary button-compact" type="button">刷新</button>
+                        </div>
+                    </div>
+                    <div id="document-list" class="document-list">
+                        <div class="document-list-empty">选择知识库后显示已上传文档。</div>
+                    </div>
                 </section>
             </div>
         </section>
