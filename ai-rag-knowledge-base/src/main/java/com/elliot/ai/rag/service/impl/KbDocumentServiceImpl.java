@@ -127,27 +127,6 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
         if (!this.save(kbDocument)) {
             throw new BusinessException(ResultCode.FAIL, "文档记录创建失败");
         }
-        try {
-            AbstractDocumentParse parse = documentParseFactory.getParse(kbDocument.getFileExtension());
-            if (parse == null) {
-                throw new BusinessException(ResultCode.FAIL, "暂不能解析该文件");
-            }
-            ParsedArtifact parsedArtifact = parse.parse(kbDocument.getId(), kbDocument.getStoragePath());
-            registerParsedFileTransactionCleanup(parsedArtifact);
-
-            kbDocument.setParsedStoragePath(parsedArtifact.getRelativePath());
-            kbDocument.setParsedFormat(parsedArtifact.getParsedFormat());
-            kbDocument.setParsedPreview(parsedArtifact.getPreview());
-            kbDocument.setParsedCharCount(parsedArtifact.getCharCount());
-            kbDocument.setPageCount(parsedArtifact.getPageCount());
-            kbDocument.setParsedBlockCount(parsedArtifact.getBlockCount());
-            kbDocument.setStatus(KbDocumentStatus.PARSED);
-            kbDocument.setErrorMessage(null);
-        } catch (Exception e) {
-            kbDocument.setStatus(KbDocumentStatus.FAILED);
-            kbDocument.setErrorMessage(abbreviate(e.getMessage(), 2000));
-        }
-        this.updateById(kbDocument);
         return toDto(kbDocument);
     }
 
@@ -222,6 +201,37 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
 
         localFilesStorageService.delete(document.getStoragePath());
         localFilesStorageService.deleteParsed(document.getParsedStoragePath());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public KbDocument parse(UUID documentId) {
+        KbDocument kbDocument = getById(documentId);
+        if (kbDocument == null) {
+            throw new BusinessException(
+                    ResultCode.FAIL,
+                    "文档不存在"
+            );
+        }
+        try {
+            AbstractDocumentParse parse = documentParseFactory.getParse(kbDocument.getFileExtension());
+            ParsedArtifact parsedResult = parse.parse(documentId, kbDocument.getStoragePath());
+            kbDocument.setParsedStoragePath(parsedResult.getRelativePath());
+            kbDocument.setParsedFormat(parsedResult.getParsedFormat());
+            kbDocument.setParsedPreview(parsedResult.getPreview());
+            kbDocument.setParsedCharCount(parsedResult.getCharCount());
+            kbDocument.setPageCount(parsedResult.getPageCount());
+            kbDocument.setParsedBlockCount(parsedResult.getBlockCount());
+            kbDocument.setStatus(KbDocumentStatus.PARSED);
+            kbDocument.setErrorMessage(null);
+            updateById(kbDocument);
+        } catch (Exception e) {
+            kbDocument.setStatus(KbDocumentStatus.FAILED);
+            kbDocument.setErrorMessage(abbreviate(e.getMessage(), 2000));
+            updateById(kbDocument);
+            throw new BusinessException(ResultCode.FAIL, e.getMessage());
+        }
+        return kbDocument;
     }
 
     private boolean existsSameFile(UUID knowledgeBaseId, String sha256) {

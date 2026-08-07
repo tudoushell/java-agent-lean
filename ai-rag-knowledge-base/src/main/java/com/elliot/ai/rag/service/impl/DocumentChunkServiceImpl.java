@@ -79,9 +79,14 @@ public class DocumentChunkServiceImpl
             throw new BusinessException(ResultCode.FAIL, "文档不存在");
         }
         if (!KbDocumentStatus.PARSED.equals(kbDocument.getStatus())
-                && !KbDocumentStatus.CHUNKED.equals(kbDocument.getStatus())) {
+                && !KbDocumentStatus.CHUNKED.equals(kbDocument.getStatus())
+                && !KbDocumentStatus.CHUNKING.equals(kbDocument.getStatus())
+        ) {
             throw new BusinessException(ResultCode.FAIL, "文档尚未解析完成");
         }
+        //todo
+        kbDocument.setStatus(KbDocumentStatus.CHUNKING);
+        kbDocumentMapper.updateById(kbDocument);
         // 重新切分时，先删除旧 Chunk。
         this.baseMapper.delete(new LambdaQueryWrapper<DocumentChunk>()
                 .eq(DocumentChunk::getDocumentId, documentId));

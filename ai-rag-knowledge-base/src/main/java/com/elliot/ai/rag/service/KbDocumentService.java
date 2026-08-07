@@ -44,4 +44,12 @@ public interface KbDocumentService extends IService<KbDocument> {
      * @param documentId 文档 ID
      */
     void deleteDocument(UUID knowledgeBaseId, UUID documentId);
+
+    /**
+     * 解析文档
+     *
+     * @param documentId
+     * @return
+     */
+    KbDocument parse(UUID documentId);
 }

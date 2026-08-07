@@ -2,7 +2,8 @@ const state = {
     libraries: [],
     activeLibrary: null,
     models: [],
-    documents: []
+    documents: [],
+    processTasks: new Map()
 };
 
 const elements = {
@@ -13,6 +14,7 @@ const elements = {
     apiStatus: document.querySelector('#api-status'),
     createForm: document.querySelector('#create-form'),
     createToggle: document.querySelector('#create-toggle'),
+    uploadForm: document.querySelector('#upload-form'),
     fileInput: document.querySelector('#document-file'),
     fileName: document.querySelector('#file-name'),
     documentId: document.querySelector('#document-id'),
@@ -20,6 +22,8 @@ const elements = {
     documentList: document.querySelector('#document-list'),
     documentCount: document.querySelector('#document-count'),
     refreshDocuments: document.querySelector('#refresh-documents'),
+    processButton: document.querySelector('#process-document'),
+    processTaskStatus: document.querySelector('#process-task-status'),
     chunkButton: document.querySelector('#chunk-document'),
     indexButton: document.querySelector('#index-document'),
     retrievalOutput: document.querySelector('#retrieval-output'),
@@ -30,6 +34,9 @@ const elements = {
 };
 
 let toastTimer;
+let taskPollTimer;
+
+const ACTIVE_TASK_STATUSES = new Set(['PENDING', 'RUNNING', 'RETRY_WAIT']);
 
 async function api(path, options = {}) {
     const response = await fetch(path, options);
@@ -136,6 +143,12 @@ function formatDate(value) {
     return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' }).format(new Date(value));
 }
 
+function clearFileSelection() {
+    // 直接清空 file input，避免部分浏览器仅调用 form.reset() 后仍保留已选文件名。
+    elements.fileInput.value = '';
+    elements.fileName.textContent = '选择 TXT、Markdown、PDF 或 Word 文件';
+}
+
 async function loadModels() {
     elements.chatModel.disabled = true;
     elements.chatSubmit.disabled = true;
@@ -220,6 +233,7 @@ async function selectLibrary(id) {
 }
 
 function clearActiveLibrary() {
+    stopTaskPolling();
     state.activeLibrary = null;
     state.documents = [];
     elements.activeName.textContent = '选择一个知识库';
@@ -258,6 +272,7 @@ async function loadDocuments(preferredId) {
     elements.documentId.value = selected?.id || '';
     renderDocument(selected);
     renderDocumentList();
+    restoreTaskProgress(selected);
 }
 
 function currentDocument() {
@@ -268,9 +283,11 @@ function currentDocument() {
 
 function selectDocument(id) {
     const selected = state.documents.find(item => item.id === id) || null;
+    stopTaskPolling();
     elements.documentId.value = selected?.id || '';
     renderDocument(selected);
     renderDocumentList();
+    restoreTaskProgress(selected);
 }
 
 function formatBytes(value) {
@@ -284,13 +301,170 @@ function formatBytes(value) {
 function statusLabel(status) {
     return {
         UPLOADED: '已上传',
+        QUEUED: '等待处理',
+        PARSING: '解析中',
         PARSED: '已解析',
+        CHUNKING: '切分中',
         CHUNKED: '已切分',
         INDEXING: '索引中',
         INDEXED: '已索引',
         INDEX_FAILED: '索引失败',
+        PROCESS_FAILED: '处理失败',
         FAILED: '处理失败'
     }[status] || status || '未知状态';
+}
+
+function taskStorageKey(documentId) {
+    return `atlas-process-task:${documentId}`;
+}
+
+function processTaskPath(documentId, taskId) {
+    return `/api/knowledge-bases/${encodeURIComponent(state.activeLibrary.id)}`
+        + `/documents/${encodeURIComponent(documentId)}/process-tasks/${encodeURIComponent(taskId)}`;
+}
+
+function currentProcessTask(documentInfo = currentDocument()) {
+    return documentInfo ? state.processTasks.get(documentInfo.id) || null : null;
+}
+
+function isTaskActive(task) {
+    return Boolean(task && ACTIVE_TASK_STATUSES.has(task.status));
+}
+
+function taskStatusLabel(status) {
+    return {
+        PENDING: '等待领取',
+        RUNNING: '处理中',
+        RETRY_WAIT: '等待重试',
+        SUCCEEDED: '已完成',
+        FAILED: '处理失败',
+        CANCELLED: '已取消'
+    }[status] || status || '未知状态';
+}
+
+function taskStepLabel(step) {
+    return {
+        PARSE: '解析文档',
+        CHUNK: '切分文本',
+        INDEX: '生成向量',
+        COMPLETE: '完成处理'
+    }[step] || step || '等待开始';
+}
+
+function rememberProcessTask(task) {
+    if (!task?.documentId || !task?.id) return;
+    state.processTasks.set(task.documentId, task);
+    localStorage.setItem(taskStorageKey(task.documentId), task.id);
+}
+
+function renderTaskProgress(documentInfo = currentDocument()) {
+    const panel = elements.processTaskStatus;
+    panel.replaceChildren();
+    const task = currentProcessTask(documentInfo);
+    if (!documentInfo) {
+        panel.className = 'task-progress empty';
+        panel.textContent = '尚未选择文档';
+        return;
+    }
+    if (!task) {
+        panel.className = 'task-progress empty';
+        panel.textContent = '尚未创建完整处理任务。';
+        return;
+    }
+
+    const normalizedStatus = String(task.status || '').toLowerCase();
+    panel.className = `task-progress ${normalizedStatus}`;
+    if (task.status === 'FAILED' || task.status === 'CANCELLED') panel.classList.add('failed');
+    if (task.status === 'SUCCEEDED') panel.classList.add('succeeded');
+
+    const head = document.createElement('div');
+    head.className = 'task-progress-head';
+    const title = document.createElement('strong');
+    title.textContent = taskStepLabel(task.currentStep);
+    const stateLabel = document.createElement('span');
+    stateLabel.textContent = taskStatusLabel(task.status);
+    head.append(title, stateLabel);
+
+    const progress = Math.min(100, Math.max(0, Number(task.progress) || 0));
+    const progressBar = document.createElement('div');
+    progressBar.className = 'task-progress-bar';
+    const progressValue = document.createElement('span');
+    progressValue.style.width = `${progress}%`;
+    progressBar.append(progressValue);
+
+    const meta = document.createElement('div');
+    meta.className = 'task-progress-meta';
+    meta.textContent = `进度 ${progress}% · 已重试 ${Number(task.retryCount) || 0} 次`;
+    panel.append(head, progressBar, meta);
+
+    if (task.errorMessage) {
+        const error = document.createElement('div');
+        error.className = 'task-progress-error';
+        error.textContent = task.errorMessage;
+        panel.append(error);
+    }
+}
+
+function stopTaskPolling() {
+    if (taskPollTimer) window.clearTimeout(taskPollTimer);
+    taskPollTimer = null;
+}
+
+async function fetchTaskProgress(documentInfo, taskId) {
+    if (!state.activeLibrary || !documentInfo || !taskId) return null;
+    const libraryId = state.activeLibrary.id;
+    const task = await api(processTaskPath(documentInfo.id, taskId));
+    if (state.activeLibrary?.id !== libraryId) return null;
+    rememberProcessTask(task);
+    return task;
+}
+
+function scheduleTaskPolling(documentInfo, taskId, delay = 1200) {
+    stopTaskPolling();
+    const libraryId = state.activeLibrary?.id;
+    taskPollTimer = window.setTimeout(async () => {
+        if (!libraryId || state.activeLibrary?.id !== libraryId || currentDocument()?.id !== documentInfo.id) return;
+        try {
+            const task = await fetchTaskProgress(documentInfo, taskId);
+            if (!task) return;
+            renderTaskProgress(documentInfo);
+            updateDocumentActions();
+            if (isTaskActive(task)) {
+                scheduleTaskPolling(documentInfo, taskId);
+                return;
+            }
+            await loadDocuments(documentInfo.id);
+            notify(task.status === 'SUCCEEDED' ? '文档处理已完成' : `文档任务${taskStatusLabel(task.status)}`, task.status === 'SUCCEEDED' ? 'success' : 'error');
+        } catch (error) {
+            renderTaskProgress(documentInfo);
+            notify(`获取处理进度失败：${error.message}`, 'error');
+        }
+    }, delay);
+}
+
+async function restoreTaskProgress(documentInfo) {
+    if (!documentInfo || !state.activeLibrary) {
+        renderTaskProgress(documentInfo);
+        return;
+    }
+    const cachedTask = currentProcessTask(documentInfo);
+    const taskId = cachedTask?.id || localStorage.getItem(taskStorageKey(documentInfo.id));
+    if (!taskId) {
+        renderTaskProgress(documentInfo);
+        return;
+    }
+    try {
+        const task = await fetchTaskProgress(documentInfo, taskId);
+        if (!task || currentDocument()?.id !== documentInfo.id) return;
+        renderTaskProgress(documentInfo);
+        updateDocumentActions();
+        if (isTaskActive(task)) scheduleTaskPolling(documentInfo, task.id);
+    } catch {
+        // 任务可能已被清理；不影响文档的正常选择和手动处理。
+        state.processTasks.delete(documentInfo.id);
+        localStorage.removeItem(taskStorageKey(documentInfo.id));
+        if (currentDocument()?.id === documentInfo.id) renderTaskProgress(documentInfo);
+    }
 }
 
 function renderDocumentList() {
@@ -365,6 +539,9 @@ async function deleteDocument(documentInfo, button) {
             `/api/knowledge-bases/${encodeURIComponent(state.activeLibrary.id)}/documents/${encodeURIComponent(documentInfo.id)}`,
             { method: 'DELETE' }
         );
+        state.processTasks.delete(documentInfo.id);
+        localStorage.removeItem(taskStorageKey(documentInfo.id));
+        if (elements.documentId.value === documentInfo.id) stopTaskPolling();
         await loadDocuments();
         notify(`“${documentInfo.originalName || '文档'}”已删除`);
     }).catch(error => notify(error.message, 'error'));
@@ -376,6 +553,7 @@ function renderDocument(documentInfo) {
         elements.documentSummary.className = 'document-summary empty';
         elements.documentSummary.textContent = '尚未选择文档';
         setPipeline('upload');
+        renderTaskProgress(null);
         updateDocumentActions();
         return;
     }
@@ -391,6 +569,7 @@ function renderDocument(documentInfo) {
     stateLine.textContent = `状态：${documentInfo.status || 'UNKNOWN'}${extras.length ? ` · ${extras.join(' · ')}` : ''}`;
     elements.documentSummary.append(title, idLine, document.createElement('br'), stateLine);
     setPipeline(documentInfo.status);
+    renderTaskProgress(documentInfo);
     updateDocumentActions();
 }
 
@@ -408,8 +587,11 @@ function setPipeline(status) {
 
 function updateDocumentActions() {
     const enabled = Boolean(state.activeLibrary && currentDocument());
-    elements.chunkButton.disabled = !enabled;
-    elements.indexButton.disabled = !enabled;
+    const taskActive = isTaskActive(currentProcessTask());
+    elements.processButton.disabled = !enabled || taskActive;
+    elements.processButton.textContent = taskActive ? '后台处理中…' : '开始完整处理';
+    elements.chunkButton.disabled = !enabled || taskActive;
+    elements.indexButton.disabled = !enabled || taskActive;
 }
 
 function switchView(name) {
@@ -937,7 +1119,7 @@ elements.fileInput.addEventListener('change', () => {
         || '选择 TXT、Markdown、PDF 或 Word 文件';
 });
 
-document.querySelector('#upload-form').addEventListener('submit', async event => {
+elements.uploadForm.addEventListener('submit', async event => {
     event.preventDefault();
     if (!requireLibrary()) return;
     const file = elements.fileInput.files[0];
@@ -947,10 +1129,29 @@ document.querySelector('#upload-form').addEventListener('submit', async event =>
         const form = new FormData();
         form.append('file', file);
         const uploaded = await api(`/api/knowledge-bases/${state.activeLibrary.id}/documents`, { method: 'POST', body: form });
-        event.currentTarget.reset();
-        elements.fileName.textContent = '选择 TXT、Markdown、PDF 或 Word 文件';
+        elements.uploadForm.reset();
+        clearFileSelection();
         await loadDocuments(uploaded.id);
         notify(`“${uploaded.originalName}”已上传并解析`);
+    }).catch(error => notify(error.message, 'error'));
+});
+
+elements.processButton.addEventListener('click', async () => {
+    if (!requireLibrary()) return;
+    const documentInfo = currentDocument();
+    if (!documentInfo) return notify('请从文件列表选择文档', 'error');
+
+    await withBusy(elements.processButton, async () => {
+        const task = await api(
+            `/api/knowledge-bases/${encodeURIComponent(state.activeLibrary.id)}`
+            + `/documents/${encodeURIComponent(documentInfo.id)}/process-tasks`,
+            { method: 'POST' }
+        );
+        rememberProcessTask(task);
+        renderTaskProgress(documentInfo);
+        updateDocumentActions();
+        if (isTaskActive(task)) scheduleTaskPolling(documentInfo, task.id, 0);
+        notify(task.status === 'PENDING' ? '处理任务已创建，等待后台执行' : `处理任务${taskStatusLabel(task.status)}`);
     }).catch(error => notify(error.message, 'error'));
 });
 

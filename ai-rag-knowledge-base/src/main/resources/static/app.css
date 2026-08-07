@@ -106,7 +106,20 @@ textarea { resize: vertical; line-height: 1.6; }
 .document-summary.empty { display: grid; place-items: center; color: var(--muted); }
 .document-summary strong { display: block; overflow-wrap: anywhere; color: var(--ink); }
 .document-summary span { color: var(--slate); }
+.task-progress { margin: 0 0 12px; padding: 11px 12px; border: 1px solid #c9dcd9; border-radius: 7px; color: var(--slate); background: #f8fbfa; font-size: 12px; line-height: 1.55; }
+.task-progress.empty { color: var(--muted); }
+.task-progress.failed { border-color: #efc7c7; color: #873838; background: #fff4f4; }
+.task-progress.succeeded { border-color: #abd8d0; color: var(--teal-dark); background: var(--teal-soft); }
+.task-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 800; }
+.task-progress-head strong { color: var(--ink); }
+.task-progress.failed .task-progress-head strong { color: #873838; }
+.task-progress-bar { height: 5px; overflow: hidden; margin: 8px 0 6px; border-radius: 999px; background: #dce8e6; }
+.task-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--teal); transition: width .24s ease; }
+.task-progress.failed .task-progress-bar > span { background: var(--red); }
+.task-progress-meta { color: var(--muted); font-size: 11px; }
+.task-progress-error { margin-top: 5px; color: #9a4141; font-size: 11px; }
 .document-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.process-card > .button-block { margin-bottom: 9px; }
 .microcopy { margin: 13px 0 0 !important; color: var(--muted) !important; font-size: 11px !important; }
 .document-list-card { grid-column: 1 / -1; }
 .document-list-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 16px; }

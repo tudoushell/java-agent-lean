@@ -93,15 +93,17 @@
                 <section class="card process-card">
                     <div class="card-label">处理资料</div>
                     <h3>文档状态</h3>
-                    <p>从下方文件列表选择文档，再进行文本切分或向量索引。</p>
+                    <p>选择文档后创建后台任务，系统会依次完成解析、切分和向量索引。</p>
                     <label for="document-id">当前文档 ID</label>
                     <input id="document-id" class="mono-input" type="text" placeholder="尚未选择" readonly>
                     <div id="document-summary" class="document-summary empty">尚未选择文档</div>
+                    <div id="process-task-status" class="task-progress empty" aria-live="polite">尚未创建处理任务</div>
+                    <button id="process-document" class="button button-primary button-block" type="button">开始完整处理</button>
                     <div class="document-actions">
                         <button id="chunk-document" class="button button-secondary" type="button">切分文本</button>
                         <button id="index-document" class="button button-primary" type="button">生成向量</button>
                     </div>
-                    <p class="microcopy">处理状态会保存在服务端，刷新页面后仍可继续操作。</p>
+                    <p class="microcopy">处理进度来自服务端；任务运行时会自动刷新，手动操作仅用于调试。</p>
                 </section>
 
                 <section class="card document-list-card">
@@ -179,6 +181,6 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<script src="/app.js" defer></script>
+<script src="/app.js?v=20260807-3" defer></script>
 </body>
 </html>
