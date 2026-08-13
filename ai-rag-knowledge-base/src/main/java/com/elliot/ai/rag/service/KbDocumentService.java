@@ -2,6 +2,7 @@ package com.elliot.ai.rag.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.elliot.ai.rag.dto.IndexResultDto;
+import com.elliot.ai.rag.dto.KbDocumentDetailDto;
 import com.elliot.ai.rag.dto.KbDocumentDto;
 import com.elliot.ai.rag.entity.KbDocument;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,6 +37,15 @@ public interface KbDocumentService extends IService<KbDocument> {
      * @return 按创建时间倒序排列的文档列表
      */
     List<KbDocumentDto> listDocuments(UUID knowledgeBaseId);
+
+    /**
+     * 查询指定知识库下的文档详情。
+     *
+     * @param knowledgeBaseId 知识库 ID
+     * @param documentId      文档 ID
+     * @return 文档详情
+     */
+    KbDocumentDetailDto getDocument(UUID knowledgeBaseId, UUID documentId);
 
     /**
      * 删除指定知识库下的文档及其 Chunk、向量和存储文件。

@@ -58,7 +58,11 @@ public enum KbDocumentStatus {
     /**
      * 文件解析或切分失败。
      */
-    FAILED("FAILED");
+    FAILED("FAILED"),
+    /**
+     * 正在删除
+     */
+    DELETING("DELETING");
 
     /**
      * 持久化到 {@code kb_document.status} 的枚举值。

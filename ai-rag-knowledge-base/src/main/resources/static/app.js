@@ -3,7 +3,10 @@ const state = {
     activeLibrary: null,
     models: [],
     documents: [],
-    processTasks: new Map()
+    processTasks: new Map(),
+    documentDetail: null,
+    chunkPage: { page: 1, size: 5, total: 0, records: [] },
+    taskHistoryPage: { page: 1, size: 5, total: 0, records: [] }
 };
 
 const elements = {
@@ -24,6 +27,18 @@ const elements = {
     refreshDocuments: document.querySelector('#refresh-documents'),
     processButton: document.querySelector('#process-document'),
     processTaskStatus: document.querySelector('#process-task-status'),
+    reprocessButton: document.querySelector('#reprocess-document'),
+    inspectorTitle: document.querySelector('#inspector-title'),
+    inspectorStatus: document.querySelector('#inspector-status'),
+    documentDetail: document.querySelector('#document-detail'),
+    chunkList: document.querySelector('#chunk-list'),
+    chunksPrev: document.querySelector('#chunks-prev'),
+    chunksNext: document.querySelector('#chunks-next'),
+    chunksPage: document.querySelector('#chunks-page'),
+    taskHistory: document.querySelector('#task-history'),
+    historyPrev: document.querySelector('#history-prev'),
+    historyNext: document.querySelector('#history-next'),
+    historyPage: document.querySelector('#history-page'),
     chunkButton: document.querySelector('#chunk-document'),
     indexButton: document.querySelector('#index-document'),
     retrievalOutput: document.querySelector('#retrieval-output'),
@@ -236,6 +251,7 @@ function clearActiveLibrary() {
     stopTaskPolling();
     state.activeLibrary = null;
     state.documents = [];
+    clearInspector();
     elements.activeName.textContent = '选择一个知识库';
     elements.activeDescription.textContent = '从左侧选择知识库，开始整理与检索资料。';
     elements.activeBadge.textContent = '未选择';
@@ -273,6 +289,8 @@ async function loadDocuments(preferredId) {
     renderDocument(selected);
     renderDocumentList();
     restoreTaskProgress(selected);
+    if (selected) loadInspector(selected).catch(error => notify(error.message, 'error'));
+    else clearInspector();
 }
 
 function currentDocument() {
@@ -288,6 +306,8 @@ function selectDocument(id) {
     renderDocument(selected);
     renderDocumentList();
     restoreTaskProgress(selected);
+    if (selected) loadInspector(selected).catch(error => notify(error.message, 'error'));
+    else clearInspector();
 }
 
 function formatBytes(value) {
@@ -429,6 +449,7 @@ function scheduleTaskPolling(documentInfo, taskId, delay = 1200) {
             if (!task) return;
             renderTaskProgress(documentInfo);
             updateDocumentActions();
+            updateInspectorActions();
             if (isTaskActive(task)) {
                 scheduleTaskPolling(documentInfo, taskId);
                 return;
@@ -458,6 +479,7 @@ async function restoreTaskProgress(documentInfo) {
         if (!task || currentDocument()?.id !== documentInfo.id) return;
         renderTaskProgress(documentInfo);
         updateDocumentActions();
+        updateInspectorActions();
         if (isTaskActive(task)) scheduleTaskPolling(documentInfo, task.id);
     } catch {
         // 任务可能已被清理；不影响文档的正常选择和手动处理。
@@ -465,6 +487,232 @@ async function restoreTaskProgress(documentInfo) {
         localStorage.removeItem(taskStorageKey(documentInfo.id));
         if (currentDocument()?.id === documentInfo.id) renderTaskProgress(documentInfo);
     }
+}
+
+function documentApiPath(documentId) {
+    return `/api/knowledge-bases/${encodeURIComponent(state.activeLibrary.id)}`
+        + `/documents/${encodeURIComponent(documentId)}`;
+}
+
+function formatDateTime(value) {
+    if (!value) return '—';
+    return new Intl.DateTimeFormat('zh-CN', {
+        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    }).format(new Date(value));
+}
+
+function clearInspector() {
+    state.documentDetail = null;
+    state.chunkPage = { page: 1, size: 5, total: 0, records: [] };
+    state.taskHistoryPage = { page: 1, size: 5, total: 0, records: [] };
+    elements.inspectorTitle.textContent = '选择文档查看详情';
+    elements.inspectorStatus.textContent = '未选择文档';
+    elements.documentDetail.className = 'inspector-empty';
+    elements.documentDetail.textContent = '选择文档后加载文件详情。';
+    elements.chunkList.className = 'inspector-empty';
+    elements.chunkList.textContent = '暂无可展示的 Chunk。';
+    elements.taskHistory.className = 'inspector-empty';
+    elements.taskHistory.textContent = '暂无处理任务历史。';
+    elements.chunksPage.textContent = '—';
+    elements.historyPage.textContent = '—';
+    elements.reprocessButton.disabled = true;
+    elements.chunksPrev.disabled = true;
+    elements.chunksNext.disabled = true;
+    elements.historyPrev.disabled = true;
+    elements.historyNext.disabled = true;
+}
+
+async function loadInspector(documentInfo) {
+    if (!state.activeLibrary || !documentInfo) return clearInspector();
+    const libraryId = state.activeLibrary.id;
+    const documentId = documentInfo.id;
+    state.documentDetail = null;
+    state.chunkPage = { page: 1, size: 5, total: 0, records: [] };
+    state.taskHistoryPage = { page: 1, size: 5, total: 0, records: [] };
+    elements.inspectorTitle.textContent = documentInfo.originalName || '未命名文档';
+    elements.inspectorStatus.textContent = '正在加载详情…';
+    elements.documentDetail.className = 'inspector-empty';
+    elements.documentDetail.textContent = '正在读取文件详情…';
+    elements.chunkList.className = 'inspector-empty';
+    elements.chunkList.textContent = '正在读取文本片段…';
+    elements.taskHistory.className = 'inspector-empty';
+    elements.taskHistory.textContent = '正在读取处理历史…';
+    updateInspectorActions();
+
+    const [detail, chunks, history] = await Promise.all([
+        api(documentApiPath(documentId)),
+        api(`${documentApiPath(documentId)}/chunks?page=1&size=${state.chunkPage.size}`),
+        api(`${documentApiPath(documentId)}/process-tasks?page=1&size=${state.taskHistoryPage.size}`)
+    ]);
+    if (state.activeLibrary?.id !== libraryId || currentDocument()?.id !== documentId) return;
+    state.documentDetail = detail;
+    state.chunkPage = chunks;
+    state.taskHistoryPage = history;
+    renderInspector();
+}
+
+async function loadChunkPage(page) {
+    const documentInfo = currentDocument();
+    if (!documentInfo || !state.activeLibrary) return;
+    elements.chunkList.className = 'inspector-empty';
+    elements.chunkList.textContent = '正在读取文本片段…';
+    const result = await api(`${documentApiPath(documentInfo.id)}/chunks?page=${page}&size=${state.chunkPage.size}`);
+    if (currentDocument()?.id !== documentInfo.id) return;
+    state.chunkPage = result;
+    renderInspector();
+}
+
+async function loadTaskHistoryPage(page) {
+    const documentInfo = currentDocument();
+    if (!documentInfo || !state.activeLibrary) return;
+    elements.taskHistory.className = 'inspector-empty';
+    elements.taskHistory.textContent = '正在读取处理历史…';
+    const result = await api(`${documentApiPath(documentInfo.id)}/process-tasks?page=${page}&size=${state.taskHistoryPage.size}`);
+    if (currentDocument()?.id !== documentInfo.id) return;
+    state.taskHistoryPage = result;
+    renderInspector();
+}
+
+function detailItem(label, value) {
+    const item = document.createElement('div');
+    item.className = 'detail-item';
+    const key = document.createElement('span');
+    key.textContent = label;
+    const content = document.createElement('strong');
+    content.textContent = value == null || value === '' ? '—' : value;
+    item.append(key, content);
+    return item;
+}
+
+function renderInspector() {
+    const detail = state.documentDetail;
+    const documentInfo = currentDocument();
+    if (!documentInfo) return clearInspector();
+    elements.inspectorTitle.textContent = detail?.originalName || documentInfo.originalName || '未命名文档';
+    elements.inspectorStatus.textContent = statusLabel(detail?.status || documentInfo.status);
+
+    elements.documentDetail.replaceChildren();
+    if (!detail) {
+        elements.documentDetail.className = 'inspector-empty';
+        elements.documentDetail.textContent = '文件详情加载失败。';
+    } else {
+        elements.documentDetail.className = 'detail-grid';
+        const values = [
+            ['状态', statusLabel(detail.status)],
+            ['文件大小', formatBytes(detail.sizeBytes)],
+            ['解析格式', detail.parsedFormat],
+            ['文本字符', detail.parsedCharCount == null ? null : String(detail.parsedCharCount)],
+            ['结构块', detail.parsedBlockCount == null ? null : String(detail.parsedBlockCount)],
+            ['页数', detail.pageCount == null ? null : String(detail.pageCount)],
+            ['切分策略', detail.chunkStrategy],
+            ['Chunk 配置', detail.chunkSize == null ? null : `${detail.chunkSize} / overlap ${detail.chunkOverlap ?? 0}`],
+            ['向量模型', detail.embeddingModel],
+            ['最近索引', formatDateTime(detail.indexedAt)],
+            ['创建时间', formatDateTime(detail.createdAt)],
+            ['更新时间', formatDateTime(detail.updatedAt)]
+        ];
+        values.forEach(([label, value]) => elements.documentDetail.append(detailItem(label, value)));
+        if (detail.parsedPreview) {
+            const preview = document.createElement('div');
+            preview.className = 'detail-preview';
+            const label = document.createElement('span');
+            label.textContent = '解析预览';
+            const text = document.createElement('p');
+            text.textContent = detail.parsedPreview;
+            preview.append(label, text);
+            elements.documentDetail.append(preview);
+        }
+        if (detail.errorMessage) {
+            const error = document.createElement('div');
+            error.className = 'detail-error';
+            error.textContent = `处理错误：${detail.errorMessage}`;
+            elements.documentDetail.append(error);
+        }
+    }
+
+    renderChunkPage();
+    renderTaskHistory();
+    updateInspectorActions();
+}
+
+function renderChunkPage() {
+    const data = state.chunkPage;
+    elements.chunkList.replaceChildren();
+    const totalPages = Math.max(1, Math.ceil((Number(data.total) || 0) / data.size));
+    elements.chunksPage.textContent = data.total ? `${data.page} / ${totalPages} · ${data.total} 段` : '0 段';
+    if (!data.records?.length) {
+        elements.chunkList.className = 'inspector-empty';
+        elements.chunkList.textContent = '该文档尚未生成 Chunk。';
+        return;
+    }
+    elements.chunkList.className = 'chunk-inspector-list';
+    data.records.forEach(chunk => {
+        const item = document.createElement('article');
+        item.className = 'chunk-inspector-item';
+        const head = document.createElement('div');
+        head.className = 'chunk-inspector-head';
+        const title = document.createElement('strong');
+        title.textContent = `Chunk ${chunk.chunkIndex ?? '—'}`;
+        const meta = document.createElement('span');
+        const values = [];
+        if (chunk.sectionTitle) values.push(chunk.sectionTitle);
+        if (chunk.pageNumber != null) values.push(`第 ${chunk.pageNumber} 页`);
+        values.push(`${chunk.charCount ?? 0} 字符`);
+        meta.textContent = values.join(' · ');
+        const content = document.createElement('p');
+        content.textContent = chunk.content || '该 Chunk 没有可展示的文本。';
+        head.append(title, meta);
+        item.append(head, content);
+        elements.chunkList.append(item);
+    });
+}
+
+function renderTaskHistory() {
+    const data = state.taskHistoryPage;
+    elements.taskHistory.replaceChildren();
+    const totalPages = Math.max(1, Math.ceil((Number(data.total) || 0) / data.size));
+    elements.historyPage.textContent = data.total ? `${data.page} / ${totalPages} · ${data.total} 次` : '0 次';
+    if (!data.records?.length) {
+        elements.taskHistory.className = 'inspector-empty';
+        elements.taskHistory.textContent = '尚未创建处理任务。';
+        return;
+    }
+    elements.taskHistory.className = 'task-history-list';
+    data.records.forEach(task => {
+        const item = document.createElement('article');
+        item.className = `history-item ${String(task.status || '').toLowerCase()}`;
+        const head = document.createElement('div');
+        head.className = 'history-item-head';
+        const title = document.createElement('strong');
+        title.textContent = `${taskStepLabel(task.currentStep)} · ${taskStatusLabel(task.status)}`;
+        const percent = document.createElement('span');
+        percent.textContent = `${task.progress ?? 0}%`;
+        head.append(title, percent);
+        const meta = document.createElement('p');
+        meta.textContent = `${formatDateTime(task.createdAt)} · 重试 ${task.retryCount ?? 0} 次`;
+        item.append(head, meta);
+        if (task.errorMessage) {
+            const error = document.createElement('small');
+            error.textContent = task.errorMessage;
+            item.append(error);
+        }
+        elements.taskHistory.append(item);
+    });
+}
+
+function updateInspectorActions() {
+    const documentInfo = currentDocument();
+    const active = isTaskActive(currentProcessTask(documentInfo));
+    const chunkData = state.chunkPage;
+    const historyData = state.taskHistoryPage;
+    elements.reprocessButton.disabled = !documentInfo || active;
+    elements.reprocessButton.textContent = active ? '任务处理中…' : '重新处理';
+    elements.chunksPrev.disabled = !documentInfo || chunkData.page <= 1;
+    elements.chunksNext.disabled = !documentInfo || !chunkData.total
+        || chunkData.page >= Math.ceil(chunkData.total / chunkData.size);
+    elements.historyPrev.disabled = !documentInfo || historyData.page <= 1;
+    elements.historyNext.disabled = !documentInfo || !historyData.total
+        || historyData.page >= Math.ceil(historyData.total / historyData.size);
 }
 
 function renderDocumentList() {
@@ -1150,9 +1398,41 @@ elements.processButton.addEventListener('click', async () => {
         rememberProcessTask(task);
         renderTaskProgress(documentInfo);
         updateDocumentActions();
+        updateInspectorActions();
         if (isTaskActive(task)) scheduleTaskPolling(documentInfo, task.id, 0);
         notify(task.status === 'PENDING' ? '处理任务已创建，等待后台执行' : `处理任务${taskStatusLabel(task.status)}`);
     }).catch(error => notify(error.message, 'error'));
+});
+
+elements.reprocessButton.addEventListener('click', async () => {
+    if (!requireLibrary()) return;
+    const documentInfo = currentDocument();
+    if (!documentInfo) return notify('请从文件列表选择文档', 'error');
+    const confirmed = window.confirm(`重新处理“${documentInfo.originalName || documentInfo.id}”会清除已有的解析结果、Chunk 和向量，是否继续？`);
+    if (!confirmed) return;
+
+    await withBusy(elements.reprocessButton, async () => {
+        const task = await api(`${documentApiPath(documentInfo.id)}/process-tasks/reprocess`, { method: 'POST' });
+        rememberProcessTask(task);
+        renderTaskProgress(documentInfo);
+        updateInspectorActions();
+        if (isTaskActive(task)) scheduleTaskPolling(documentInfo, task.id, 0);
+        await loadDocuments(documentInfo.id);
+        notify('已创建重新处理任务');
+    }).catch(error => notify(error.message, 'error'));
+});
+
+elements.chunksPrev.addEventListener('click', () => {
+    loadChunkPage(state.chunkPage.page - 1).catch(error => notify(error.message, 'error'));
+});
+elements.chunksNext.addEventListener('click', () => {
+    loadChunkPage(state.chunkPage.page + 1).catch(error => notify(error.message, 'error'));
+});
+elements.historyPrev.addEventListener('click', () => {
+    loadTaskHistoryPage(state.taskHistoryPage.page - 1).catch(error => notify(error.message, 'error'));
+});
+elements.historyNext.addEventListener('click', () => {
+    loadTaskHistoryPage(state.taskHistoryPage.page + 1).catch(error => notify(error.message, 'error'));
 });
 
 elements.chunkButton.addEventListener('click', async () => {

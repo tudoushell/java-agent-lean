@@ -6,6 +6,8 @@ import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.config.ChunkProperties;
 import com.elliot.ai.rag.config.StorageProperties;
+import com.elliot.ai.rag.dto.DocumentChunkDto;
+import com.elliot.ai.rag.dto.DocumentChunkPageDto;
 import com.elliot.ai.rag.entity.DocumentChunk;
 import com.elliot.ai.rag.entity.KbDocument;
 import com.elliot.ai.rag.enums.KbDocumentStatus;
@@ -69,6 +71,17 @@ public class DocumentChunkServiceImpl
         return this.baseMapper.selectList(new LambdaQueryWrapper<DocumentChunk>()
                 .eq(DocumentChunk::getDocumentId, documentId)
                 .between(DocumentChunk::getChunkIndex, startIndex, endIndex));
+    }
+
+    @Override
+    public DocumentChunkPageDto pageChunks(UUID documentId, int page, int size) {
+        long total = this.baseMapper.countByDocumentId(documentId);
+        long offset = (long) (page - 1) * size;
+        List<DocumentChunkDto> records = this.baseMapper.selectPageByDocumentId(documentId, offset, size)
+                .stream()
+                .map(DocumentChunkDto::from)
+                .toList();
+        return new DocumentChunkPageDto(page, size, total, records);
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.elliot.ai.rag.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.elliot.ai.rag.entity.DocumentProcessTask;
 import com.elliot.ai.rag.entity.KbDocument;
 import com.elliot.ai.rag.enums.DocumentTaskStatus;
@@ -67,6 +68,22 @@ public class DocumentTaskStateServiceImpl implements DocumentTaskStateService {
         task.setFinishedAt(now);
         task.setUpdatedAt(now);
         taskMapper.updateById(task);
+
+        /*
+         * MyBatis-Plus 默认可能忽略值为 null 的实体字段。
+         * 因此这里使用 UpdateWrapper 显式把历史错误信息更新为 NULL，
+         * 避免任务已成功但接口仍返回上一次失败原因。
+         */
+        taskMapper.update(null, new LambdaUpdateWrapper<DocumentProcessTask>()
+                .eq(DocumentProcessTask::getId, taskId)
+                .set(DocumentProcessTask::getErrorCode, null)
+                .set(DocumentProcessTask::getErrorMessage, null));
+
+        // 整个处理链路成功后，文档自身也不应保留历史错误信息。
+        documentMapper.update(null, new LambdaUpdateWrapper<KbDocument>()
+                .eq(KbDocument::getId, task.getDocumentId())
+                .set(KbDocument::getErrorMessage, null)
+                .set(KbDocument::getUpdatedAt, now));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -83,7 +100,7 @@ public class DocumentTaskStateServiceImpl implements DocumentTaskStateService {
         task.setWorkerId(null);
         task.setLockedAt(null);
         task.setHeartbeatAt(null);
-        task.setErrorMessage(
+        task.setErrorCode(
                 exception.getClass().getSimpleName()
         );
         task.setErrorMessage(abbreviate(exception.getMessage(), 2000));

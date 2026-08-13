@@ -16,6 +16,26 @@ import java.util.UUID;
 public interface DocumentProcessTaskMapper extends BaseMapper<DocumentProcessTask> {
 
 
+    @Select("""
+              SELECT COUNT(*)
+                FROM document_process_task
+                WHERE document_id = #{documentId}
+                AND status = 'RUNNING'
+            """)
+    Long countRunningTasks(@Param("documentId") UUID documentId);
+
+    @Update("""
+            update document_prcoess_task
+            set status = 'CANCELLED',
+                finished_at = #{now},
+                updated_at = #{now}
+            where document_id = #{documentId}
+            and status in ('PENDING', 'RETRY_WAIT')
+            """)
+    int cancelWaitingTasks(@Param("documentId") UUID documentId,
+                           @Param("now") OffsetDateTime now);
+
+
     /**
      * 超时但还有重试次数的任务进入 RETRY_WAIT
      *
@@ -64,17 +84,62 @@ public interface DocumentProcessTaskMapper extends BaseMapper<DocumentProcessTas
             """)
     void failExhaustedStaleTask(@Param("cutoff") OffsetDateTime cutoff, @Param("now") OffsetDateTime now);
 
+    /**
+     * 查询指定文档最新的活动处理任务。
+     *
+     * <p>活动状态与数据库部分唯一索引保持一致：同一文档最多存在一个
+     * {@code PENDING}、{@code RUNNING} 或 {@code RETRY_WAIT} 任务。</p>
+     *
+     * @param documentId 文档 ID
+     * @return 活动任务；不存在时返回 {@code null}
+     */
     @Select("""
-            select id
+            select *
             from document_process_task
-            where status = 'PENDING'
-            or (
-                status = 'RETRY_WAIT'
-                and next_retry_at <= CURRENT_TIMESTAMP
-               )
-            order by created_at
-            for update skip locked
-            limit #{limit}
-           """)
+            where document_id = #{documentId}
+              and status in ('PENDING', 'RUNNING', 'RETRY_WAIT')
+            order by created_at desc, id desc
+            limit 1
+            """)
+    DocumentProcessTask selectActiveTask(@Param("documentId") UUID documentId);
+
+    /**
+     * 按创建时间倒序分页查询指定文档的处理任务历史。
+     */
+    @Select("""
+            select *
+            from document_process_task
+            where document_id = #{documentId}
+            order by created_at desc, id desc
+            limit #{size} offset #{offset}
+            """)
+    List<DocumentProcessTask> selectPageByDocumentId(
+            @Param("documentId") UUID documentId,
+            @Param("offset") long offset,
+            @Param("size") int size
+    );
+
+    /**
+     * 统计指定文档的全部处理任务数量。
+     */
+    @Select("""
+            select count(*)
+            from document_process_task
+            where document_id = #{documentId}
+            """)
+    long countByDocumentId(@Param("documentId") UUID documentId);
+
+    @Select("""
+             select id
+             from document_process_task
+             where status = 'PENDING'
+             or (
+                 status = 'RETRY_WAIT'
+                 and next_retry_at <= CURRENT_TIMESTAMP
+                )
+             order by created_at
+             for update skip locked
+             limit #{limit}
+            """)
     List<UUID> selectClaimableTaskIds(@Param("limit") int limit);
 }

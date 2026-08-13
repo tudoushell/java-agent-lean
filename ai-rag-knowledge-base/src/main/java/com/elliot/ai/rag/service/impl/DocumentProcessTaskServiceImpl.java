@@ -1,9 +1,10 @@
 package com.elliot.ai.rag.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
+import com.elliot.ai.rag.dto.DocumentProcessTaskDto;
+import com.elliot.ai.rag.dto.DocumentProcessTaskPageDto;
 import com.elliot.ai.rag.entity.DocumentProcessTask;
 import com.elliot.ai.rag.entity.KbDocument;
 import com.elliot.ai.rag.enums.DocumentTaskStatus;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.util.List;
 
 /**
  * 文档处理任务业务服务实现。
@@ -50,7 +52,7 @@ public class DocumentProcessTaskServiceImpl
             log.warn("创建文档处理任务失败，文档不存在: documentId={}", documentId);
             throw new BusinessException(ResultCode.FAIL, "文档不存在");
         }
-        DocumentProcessTask activeTask = getActiveTask(documentId);
+        DocumentProcessTask activeTask = baseMapper.selectActiveTask(documentId);
         if (activeTask != null) {
             log.info("文档已有活动处理任务，直接返回: documentId={}, taskId={}, status={}",
                     documentId, activeTask.getId(), activeTask.getStatus());
@@ -70,7 +72,7 @@ public class DocumentProcessTaskServiceImpl
             this.save(task);
         } catch (DuplicateKeyException e) {
             log.info("并发创建文档处理任务发生唯一键冲突，查询已有活动任务: documentId={}", documentId);
-            DocumentProcessTask existing = getActiveTask(kbDocument.getId());
+            DocumentProcessTask existing = baseMapper.selectActiveTask(kbDocument.getId());
             if (existing != null) {
                 log.info("返回并发创建的活动任务: documentId={}, taskId={}, status={}",
                         documentId, existing.getId(), existing.getStatus());
@@ -87,11 +89,15 @@ public class DocumentProcessTaskServiceImpl
         return task;
     }
 
-    private DocumentProcessTask getActiveTask(UUID documentId) {
-        return this.baseMapper.selectOne(new LambdaQueryWrapper<DocumentProcessTask>().
-                eq(DocumentProcessTask::getDocumentId, documentId)
-                .in(DocumentProcessTask::getStatus, DocumentTaskStatus.listActiveStatuses())
-                .last("limit 1")
-        );
+    @Override
+    public DocumentProcessTaskPageDto pageTaskHistory(UUID documentId, int page, int size) {
+        long total = baseMapper.countByDocumentId(documentId);
+        long offset = (long) (page - 1) * size;
+        List<DocumentProcessTaskDto> records = baseMapper.selectPageByDocumentId(documentId, offset, size)
+                .stream()
+                .map(DocumentProcessTaskDto::from)
+                .toList();
+        return new DocumentProcessTaskPageDto(page, size, total, records);
     }
+
 }

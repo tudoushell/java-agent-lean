@@ -1,10 +1,12 @@
 package com.elliot.ai.rag.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.elliot.ai.common.enums.ResultCode;
 import com.elliot.ai.common.exception.BusinessException;
 import com.elliot.ai.rag.dto.IndexResultDto;
+import com.elliot.ai.rag.dto.KbDocumentDetailDto;
 import com.elliot.ai.rag.dto.KbDocumentDto;
 import com.elliot.ai.rag.dto.StoredFile;
 import com.elliot.ai.rag.entity.DocumentChunk;
@@ -75,7 +77,12 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
             kbDocument.setStatus(KbDocumentStatus.INDEXED);
             kbDocument.setIndexedAt(now);
             kbDocument.setEmbeddingModel(EMBEDDING_MODEL_NAME);
+            kbDocument.setErrorMessage(null);
             updateById(kbDocument);
+            // 显式更新 NULL，避免 MyBatis-Plus 的默认字段策略保留历史失败信息。
+            this.baseMapper.update(null, new LambdaUpdateWrapper<KbDocument>()
+                    .eq(KbDocument::getId, documentId)
+                    .set(KbDocument::getErrorMessage, null));
             return new IndexResultDto(documentId, vectorCount, EMBEDDING_MODEL_NAME, kbDocument.getStatus().getValue());
         } catch (Exception e) {
             deleteVectorsQuietly(documentId);
@@ -175,6 +182,17 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
                 .stream()
                 .map(this::toDto)
                 .toList();
+    }
+
+    @Override
+    public KbDocumentDetailDto getDocument(UUID knowledgeBaseId, UUID documentId) {
+        KbDocument document = this.getOne(new LambdaQueryWrapper<KbDocument>()
+                .eq(KbDocument::getId, documentId)
+                .eq(KbDocument::getKnowledgeBaseId, knowledgeBaseId));
+        if (document == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "文档不存在或不属于该知识库");
+        }
+        return KbDocumentDetailDto.from(document);
     }
 
     @Override

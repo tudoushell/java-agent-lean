@@ -1,6 +1,7 @@
 package com.elliot.ai.rag.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.elliot.ai.rag.dto.DocumentProcessTaskPageDto;
 import com.elliot.ai.rag.entity.DocumentProcessTask;
 
 import java.util.UUID;
@@ -25,4 +26,14 @@ public interface DocumentProcessTaskService extends IService<DocumentProcessTask
      * @throws com.elliot.ai.common.exception.BusinessException 文档不存在时抛出
      */
     DocumentProcessTask createFullProcessTask(UUID documentId);
+
+    /**
+     * 分页查询指定文档的处理任务历史。
+     *
+     * @param documentId 文档 ID
+     * @param page       页码，从 1 开始
+     * @param size       每页数量
+     * @return 任务历史分页结果
+     */
+    DocumentProcessTaskPageDto pageTaskHistory(UUID documentId, int page, int size);
 }

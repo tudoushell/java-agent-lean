@@ -121,6 +121,53 @@
                         <div class="document-list-empty">选择知识库后显示已上传文档。</div>
                     </div>
                 </section>
+
+                <section class="card document-inspector-card">
+                    <div class="document-list-head inspector-head">
+                        <div>
+                            <div class="card-label">文件检查台</div>
+                            <h3 id="inspector-title">选择文档查看详情</h3>
+                        </div>
+                        <div class="document-list-tools">
+                            <span id="inspector-status">未选择文档</span>
+                            <button id="reprocess-document" class="button button-secondary button-compact" type="button">重新处理</button>
+                        </div>
+                    </div>
+
+                    <div class="inspector-grid">
+                        <section class="inspector-panel detail-panel">
+                            <div class="inspector-panel-head">
+                                <h4>文件详情</h4>
+                                <span>解析与索引信息</span>
+                            </div>
+                            <div id="document-detail" class="inspector-empty">选择文档后加载文件详情。</div>
+                        </section>
+
+                        <section class="inspector-panel chunks-panel">
+                            <div class="inspector-panel-head">
+                                <h4>文本片段</h4>
+                                <div class="pager-tools">
+                                    <button id="chunks-prev" class="pager-button" type="button" aria-label="上一页 Chunk">←</button>
+                                    <span id="chunks-page">—</span>
+                                    <button id="chunks-next" class="pager-button" type="button" aria-label="下一页 Chunk">→</button>
+                                </div>
+                            </div>
+                            <div id="chunk-list" class="inspector-empty">暂无可展示的 Chunk。</div>
+                        </section>
+
+                        <section class="inspector-panel history-panel">
+                            <div class="inspector-panel-head">
+                                <h4>处理历史</h4>
+                                <div class="pager-tools">
+                                    <button id="history-prev" class="pager-button" type="button" aria-label="上一页任务">←</button>
+                                    <span id="history-page">—</span>
+                                    <button id="history-next" class="pager-button" type="button" aria-label="下一页任务">→</button>
+                                </div>
+                            </div>
+                            <div id="task-history" class="inspector-empty">暂无处理任务历史。</div>
+                        </section>
+                    </div>
+                </section>
             </div>
         </section>
 
@@ -181,6 +228,6 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=20260807-3" defer></script>
+<script src="/app.js?v=20260813-1" defer></script>
 </body>
 </html>
